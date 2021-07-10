@@ -193,7 +193,7 @@ fn word_huffman() {
               .iter()
               .map(|x| x.to_string())
               .collect::<Vec<_>>();
-            for n in 2..std::cmp::min(words.len() + 1, 5) {
+            for n in 2..std::cmp::min(words.len() + 1, 6) {
               for i in (&words).into_iter().map(|x| x.clone()).ngrams(n) {
                 let i = i.join("");
                 let c = i.len() + wc.get(&i).unwrap_or(&0);
