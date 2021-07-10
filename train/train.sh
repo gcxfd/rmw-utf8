@@ -8,5 +8,5 @@ cd $_DIR
 
 cargo build --release
 #export RAYON_NUM_THREADS=8
-target/release/train
+RUST_LOG="sanakirja=debug" RUST_BACKTRACE=1 target/release/train
 mv d.zst ../rmw-utf8/src

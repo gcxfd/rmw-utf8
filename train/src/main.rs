@@ -6,12 +6,10 @@ use rayon::iter::ParallelBridge;
 use rayon::prelude::ParallelIterator;
 use speedy::{Endianness, Readable, Writable};
 use static_init::dynamic;
-use std::convert::TryInto;
 use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
 use std::{
   env,
   fs::{create_dir, File},
@@ -20,6 +18,8 @@ use std::{
 use walkdir::WalkDir;
 mod lossycounter;
 use lossycounter::LossyCounter;
+
+pub use sdb::{Db, DbEv, DbU, Encode, Sdb, Storable, Tx, UnsizedStorable};
 
 const CACHE_COUNTED: &str = "cache/counted";
 
@@ -38,10 +38,17 @@ pub static DIR: PathBuf = env::current_exe()
 pub static CACHE: PathBuf = (&*DIR).join("cache");
 
 #[dynamic]
-pub static DB: sled::Db = {
-  let cache = &*CACHE;
-  let _ = create_dir(cache);
-  sled::open(cache).unwrap()
+pub static TX: Tx = {
+  use sdb::TxArgs::{Filename, InitSize, MaxTx};
+
+  Tx::new(
+    &*CACHE,
+    &[
+      MaxTx(8),
+      //Filename("sdb"),
+      //InitSize(1<<21),
+    ],
+  )
 };
 
 #[dynamic]
@@ -50,9 +57,19 @@ pub static VERSION: u32 = SystemTime::now()
   .unwrap()
   .as_secs() as u32;
 
+#[derive(Sdb, Default, Eq, PartialEq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct Hash(pub [u8; 32]);
+
+#[dynamic]
+pub static STATE: DbU<'static, [u8], u32> = TX.db(0);
+
+#[dynamic]
+pub static EXIST: Db<'static, Hash, u32> = TX.db(1);
+
 fn main() {
   println!("version {:?}", *VERSION);
 
+  let _ = create_dir(&*CACHE);
   word_huffman();
   //unicode_huffman();
 }
@@ -144,12 +161,9 @@ fn word_huffman() {
   let epsilon = 0.00000003;
   let mut lc = LossyCounter::with_epsilon(epsilon);
 
-  let pre_version = if let Some(v) = DB.get(&"").unwrap() {
-    u32::from_ne_bytes(v[..4].try_into().unwrap())
-  } else {
-    0
-  };
-  if pre_version != 0 {
+  let version = "version".as_bytes();
+  let pre_version = STATE.one(&version).unwrap().unwrap_or(&0);
+  if pre_version != &0 {
     let fp = Path::new(&*DIR).join(CACHE_COUNTED.to_owned() + ".zst");
     println!("加载缓存中 {}", fp.display().to_string());
     let mut file = File::open(&fp).unwrap();
@@ -174,10 +188,9 @@ fn word_huffman() {
       txt_line_iter()
         .par_bridge()
         .map_with(tx, |tx, (txt_path, iter)| {
-          let hash = blake3_file::hash(&txt_path).unwrap();
+          let hash = Hash(blake3_file::hash(&txt_path).unwrap());
           let exist;
-          if let Some(v) = DB.get(&hash).unwrap() {
-            let v = u32::from_ne_bytes(v[..4].try_into().unwrap());
+          if let Some(v) = EXIST.one(&hash).unwrap() {
             if v <= pre_version {
               return;
             } else {
@@ -193,7 +206,7 @@ fn word_huffman() {
               .iter()
               .map(|x| x.to_string())
               .collect::<Vec<_>>();
-            for n in 2..std::cmp::min(words.len() + 1, 8) {
+            for n in 2..std::cmp::min(words.len() + 1, 5) {
               for i in (&words).into_iter().map(|x| x.clone()).ngrams(n) {
                 let i = i.join("");
                 let c = i.len() + wc.get(&i).unwrap_or(&0);
@@ -214,7 +227,7 @@ fn word_huffman() {
           }
           let _ = tx.send(wc);
           if !exist {
-            let _ = DB.insert(hash, &(*VERSION).to_ne_bytes());
+            let _ = EXIST.put(&hash, &*VERSION);
           }
         })
         .for_each(drop);
@@ -229,7 +242,7 @@ fn word_huffman() {
       LossyCounted(lc.query(0.0).collect::<Vec<_>>()),
       CACHE_COUNTED,
     );
-    let _ = DB.insert(&"", &(*VERSION).to_ne_bytes());
+    let _ = STATE.upsert(&version, &*VERSION);
     let threshold = 0.0000003;
 
     let elements: Vec<_> = lc.query(threshold).collect();
@@ -324,14 +337,9 @@ fn word_huffman() {
 }
 
 fn write<T: Writable<Endianness>>(t: T, path: &str) {
-  let p = Path::new(&*DIR).join(path.to_owned() + ".zst");
   let bytes = t.write_to_vec_with_ctx(Endianness::LittleEndian).unwrap();
-  println!(
-    "写入 {} 压缩前 大小 {:.2}MB",
-    (&p).display().to_string(),
-    bytes.len() as f64 / (1024.0 * 1024.0)
-  );
 
+  let p = Path::new(&*DIR).join(path.to_owned() + ".zst");
   let f = File::create(p).unwrap();
   let mut encoder = zstd::stream::write::Encoder::new(f, 19)
     .unwrap()
