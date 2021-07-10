@@ -324,10 +324,14 @@ fn word_huffman() {
 }
 
 fn write<T: Writable<Endianness>>(t: T, path: &str) {
-  println!("写入 {}", path);
-  let bytes = t.write_to_vec_with_ctx(Endianness::LittleEndian).unwrap();
-
   let p = Path::new(&*DIR).join(path.to_owned() + ".zst");
+  let bytes = t.write_to_vec_with_ctx(Endianness::LittleEndian).unwrap();
+  println!(
+    "写入 {} 压缩前 大小 {:.2}MB",
+    (&p).display().to_string(),
+    bytes.len() as f64 / (1024.0 * 1024.0)
+  );
+
   let f = File::create(p).unwrap();
   let mut encoder = zstd::stream::write::Encoder::new(f, 19)
     .unwrap()
