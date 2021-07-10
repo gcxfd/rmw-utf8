@@ -1,0 +1,44 @@
+推荐10个Java方向最热门的开源项目（8月）
+1. JCSprout（Java核心知识库）
+Github地址：https://github.com/crossoverJie/JCSprout
+star:12k
+介绍： 处于萌芽阶段的 Java 核心知识库。
+2. Java-Guide （Java学习指南）
+Github地址：https://github.com/Snailclimb/Java-Guide
+star:3.1k
+介绍： 一份涵盖大部分Java程序员所需要掌握的核心知识，正在一步一步慢慢完善，期待您的参与。
+3. java-design-patterns （使用Java实现的设计模式）
+Github地址：https://github.com/iluwatar/java-design-patterns
+star:38k
+介绍：设计模式是形式化的最佳实践，程序员可以在设计应用程序或系统时使用它来解决常见问题。设计模式可以通过提供经过验证的经过验证的开发范例来加速开发过程。 重用设计模式有助于防止可能导致重大问题的细微问题，并且还可以提高熟悉模式的编码人员和架构师的代码可读性。
+4. AndroidAutoSize（今日头条屏幕适配方案终极版）
+Github地址：https://github.com/JessYanCoding/AndroidAutoSize
+star:1.8k
+介绍： 今日头条屏幕适配方案终极版，一个极低成本的 Android 屏幕适配方案.。
+5. Sentinel（高可用防护的流量管理框架）
+Github地址：https://github.com/alibaba/Sentinel
+star:1.8k
+介绍： 随着分布式系统越来越受欢迎，服务之间的稳定性变得比以往任何时候都更加重要。Sentinel将“流程”作为突破点，并在多个领域工作，包括流量控制，并发，断路和负载保护，以保护服务稳定性。
+6. spring-boot（轻量级配置 Spring）
+Github地址：https://github.com/spring-projects/spring-boot
+star:28k
+介绍： 虽然Spring的组件代码是轻量级的，但它的配置却是重量级的（需要大量XML配置）,不过Spring Boot 让这一切成为了过去。 另外Spring Cloud也是基于Spring Boot构建的，我个人非常有必要学习一下。
+关于Spring Boot官方的介绍：
+Spring Boot makes it easy to create stand-alone, production-grade Spring based Applications that you can “just run”…Most Spring Boot applications need very little Spring configuration.(Spring Boot可以轻松创建独立的生产级基于Spring的应用程序,只要通过 “just run”（可能是run ‘Application’或java -jar 或 tomcat 或 maven插件run 或 shell脚本）便可以运行项目。大部分Spring Boot项目只需要少量的配置即可)
+7. weixin-java-tools （全能微信Java开发工具包）
+Github地址：https://github.com/Wechat-Group/weixin-java-tools
+star:9.5k
+介绍： 全能微信Java开发工具包，支持包括微信支付、开放平台、小程序、企业号和公众号等的开发 。
+8. guava（谷歌开源的核心工具类库）
+Github地址：https://github.com/google/guava
+star:26k
+介绍： Guava是一组核心库，包括新的集合类型（例如multimap和multiset），不可变集合，图形库，函数类型，内存缓存以及用于并发，I / O，散列，API /实用程序 ，反射，字符串处理等等！
+9. incubator-dubbo（阿里开源的高性能 RPC 框架）
+Github地址：https://github.com/apache/incubator-dubbo
+star:21k
+介绍： 阿里开源的一个基于Java的高性能开源RPC框架。
+10. interviews（软件工程技术面试个人指南）
+Github地址： https://github.com/kdn251/interviews
+star:21k
+介绍： 软件工程技术面试个人指南。该项目已加入“掘金翻译计划”，存在中文版！
+另外，我个人觉得 Spring Cloud 如果有时间的话可以学一下！

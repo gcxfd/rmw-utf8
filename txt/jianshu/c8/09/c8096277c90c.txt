@@ -1,0 +1,436 @@
+Java 中队列同步器 AQS（AbstractQueuedSynchronizer）的实现原理
+在
+在 。
+，然后将其加入队列，同时阻塞当前线程；当同步状态释放时，会将同步队列中首节点唤醒，让其再次尝试去获取同步状态。同步队列的基本结构如下：
+同步队列使用同步器中的静态内部类  用来保存获取同步状态的线程的引用、线程的等待状态、前驱节点和后继节点。
+同步队列中  节点的属性名称和具体含义如下表所示：
+每个节点线程都有两种锁模式，分别为  只能取以下表中的枚举值：
+同步器内部使用了一个名为  类型的变量表示同步状态，同步器的主要使用方式是通过继承，子类通过继承并实现它的抽象方法来管理同步状态，同步器给我们提供了如下三个方法来对同步状态进行更改。
+在独享锁中同步状态  就是持有锁的数量。
+同步器中提供了  方法来进行独占式同步状态的获取，获取到了同步状态也就是获取到了锁，该方法源码如下所示：
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+方法首先会调用
+通过源码发现，当获取锁失败时，会执行判断条件与操作的后半部分  方法，该方法源码如下：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);
+return node;
+}
+通过方法参数指定的锁模式（共享锁 or 独占锁）和当前线程构造出一个  方法源码如下：
+private Node enq(final Node node) {
+for (;;) {
+Node t = tail;
+if (t == null) { // Must initialize
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+通过其源码可以发现和第一次尝试加入队列的代码类似，只是该方法里面加了同步队列初始化判断，使用  方法的入参继续进行其它步骤，该方法如下所示：
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+可以看到，该方法本质上也是通过一个死循环（自旋）去获取锁并且支持中断，在循环体外面定义两个标记变量，
+如果当前节点的前驱节点  带来非常大的执行开销，浪费资源。该方法源码如下：
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+/*
+* This node has already set status asking a release
+* to signal it, so it can safely park.
+*/
+return true;
+if (ws > 0) {
+/*
+* Predecessor was cancelled. Skip over predecessors and
+* indicate retry.
+*/
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+/*
+* waitStatus must be 0 or PROPAGATE.  Indicate that we
+* need a signal, but don't park yet.  Caller will need to
+* retry to make sure it cannot acquire before parking.
+*/
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+方法参数为当前节点的前驱节点以及当前节点，主要是靠前驱节点来判断是否需要进行阻塞，首先获取到前驱节点的等待状态
+当经过判断后需要阻塞的话，也就是  方法阻塞挂起当前线程，并返回当前线程的中断标识。方法如下：
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+线程阻塞是通过  独占式同步状态获取锁的流程就完成了，下面通过一个流程图来看看整体流程：
+下面再看看独占式锁释放的过程，同步器使用  方法来让我们进行独占式锁的释放，其方法源码如下：
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+首先调用  方法是一样的套路，需要开发者自己定义锁释放操作。
+通过其  方法实现，该方法源码如下：
+private void unparkSuccessor(Node node) {
+/*
+* If status is negative (i.e., possibly needing signal) try
+* to clear in anticipation of signalling.  It is OK if this
+* fails or if status is changed by waiting thread.
+*/
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+/*
+* Thread to unpark is held in successor, which is normally
+* just the next node.  But if cancelled or apparently null,
+* traverse backwards from tail to find the actual
+* non-cancelled successor.
+*/
+Node s = node.next;
+if (s == null || s.waitStatus > 0) {
+s = null;
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+if (s != null)
+LockSupport.unpark(s.thread);
+}
+首先获取头节点的等待状态  方法实现中，该方法如下：
+假设一个线程执行到了上图中的 ① 处，② 处还没有执行，此时另一个线程恰好执行了  还没赋值呢，所以需要从后往前进行查找。至此，独占式锁释放操作就结束了，同样的，最后我们也通过一个流程图来看看整个锁释放的过程：
+同步器提供了  方法来进行可响应中断的获取锁操作，方法实现源码如下：
+public final void acquireInterruptibly(int arg)
+throws InterruptedException {
+if (Thread.interrupted())
+throw new InterruptedException();
+if (!tryAcquire(arg))
+doAcquireInterruptibly(arg);
+}
+方法首先检查当前线程的中断状态，如果已中断，则直接抛出中断异常  方法，跟进该方法如下：
+private void doAcquireInterruptibly(int arg)
+throws InterruptedException {
+final Node node = addWaiter(Node.EXCLUSIVE);
+boolean failed = true;
+try {
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+throw new InterruptedException();
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+仔细观察可以发现该方法实现源码和上文中  放到了方法里面了，还有一个区别就是当在循环体内判断需要进行中断时会直接抛出异常来响应中断，两个方法的对比如下：
+其它步骤和独占式锁获取一致，流程图大体上和不响应中断的锁获取差不多，只是在最开始多了一步线程中断状态检查和循环是会抛出中断异常而已。
+同步器提供了 。方法源码如下：
+public final boolean tryAcquireNanos(int arg, long nanosTimeout)
+throws InterruptedException {
+if (Thread.interrupted())
+throw new InterruptedException();
+return tryAcquire(arg) ||
+doAcquireNanos(arg, nanosTimeout);
+}
+首先会调用  方法的源码如下：
+private boolean doAcquireNanos(int arg, long nanosTimeout)
+throws InterruptedException {
+if (nanosTimeout <= 0L)
+return false;
+final long deadline = System.nanoTime() + nanosTimeout;
+final Node node = addWaiter(Node.EXCLUSIVE);
+boolean failed = true;
+try {
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return true;
+}
+nanosTimeout = deadline - System.nanoTime();
+if (nanosTimeout <= 0L)
+return false;
+if (shouldParkAfterFailedAcquire(p, node) &&
+nanosTimeout > spinForTimeoutThreshold)
+LockSupport.parkNanos(this, nanosTimeout);
+if (Thread.interrupted())
+throw new InterruptedException();
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+由以上方法实现源码可以看出，针对超时获取这里主要实现思路是：先使用当前时间加上参数传入的超时时间间隔
+可以看到在里面执行自旋的时候和上面独占式同步获取锁状态  尝试获取锁，如果获取成功则返回。
+除了超时时间计算那里不同外，还有个不同的地方就是在超时获取锁失败之后的操作，如果当前线程获取锁失败，则判断剩余超时时间
+加后面这个判断的主要原因在于，在非常短（小于 1000 纳秒）的时间内的等待无法做到十分精确，如果这时还进行超时等待的话，反而会让我们指定  的超时从整体上给人感觉反而不太精确，因此，在剩余超时时间非常短的情况下，同步器会再次自旋进行超时获取锁的过程，独占式超时获取锁整个过程如下所示：
+来获取共享锁（同步状态），方法源码如下：
+public final void acquireShared(int arg) {
+if (tryAcquireShared(arg) < 0)
+doAcquireShared(arg);
+}
+首先通过  尝试获取共享锁，该方法是一个模板方法在同步器中只是抛出一个不支持操作异常，需要开发人员自己去实现，同时方法的返回值有三种不同的类型分别代表三种不同的状态，其含义如下：
+当方法 ，继续跟进该方法：
+private void doAcquireShared(int arg) {
+final Node node = addWaiter(Node.SHARED);
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head) {
+int r = tryAcquireShared(arg);
+if (r >= 0) {
+setHeadAndPropagate(node, r);
+p.next = null; // help GC
+if (interrupted)
+selfInterrupt();
+failed = false;
+return;
+}
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+方法首先调用  方法的具体实现：
+private void setHeadAndPropagate(Node node, int propagate) {
+Node h = head; // Record old head for check below
+setHead(node);
+/*
+* Try to signal next queued node if:
+*   Propagation was indicated by caller,
+*     or was recorded (as h.waitStatus either before
+*     or after setHead) by a previous operation
+*     (note: this uses sign-check of waitStatus because
+*      PROPAGATE status may transition to SIGNAL.)
+* and
+*   The next node is waiting in shared mode,
+*     or we don't know, because it appears null
+*
+* The conservatism in both of these checks may cause
+* unnecessary wake-ups, but only when there are multiple
+* racing acquires/releases, so most need signals now or soon
+* anyway.
+*/
+if (propagate > 0 || h == null || h.waitStatus < 0 ||
+(h = head) == null || h.waitStatus < 0) {
+Node s = node.next;
+if (s == null || s.isShared())
+doReleaseShared();
+}
+}
+首先将当前获取到锁的节点设置为头节点，然后方法参数  方法是同步器共享锁释放的主要逻辑。
+同步器提供了  方法来进行共享锁的释放，方法源码如下所示：
+public final boolean releaseShared(int arg) {
+if (tryReleaseShared(arg)) {
+doReleaseShared();
+return true;
+}
+return false;
+}
+首先调用  方法，进行唤醒后继节点并检查它是否可以向后传播等操作。继续跟进该方法如下：
+private void doReleaseShared() {
+/*
+* Ensure that a release propagates, even if there are other
+* in-progress acquires/releases.  This proceeds in the usual
+* way of trying to unparkSuccessor of head if it needs
+* signal. But if it does not, status is set to PROPAGATE to
+* ensure that upon release, propagation continues.
+* Additionally, we must loop in case a new node is added
+* while we are doing this. Also, unlike other uses of
+* unparkSuccessor, we need to know if CAS to reset status
+* fails, if so rechecking.
+*/
+for (;;) {
+Node h = head;
+if (h != null && h != tail) {
+int ws = h.waitStatus;
+if (ws == Node.SIGNAL) {
+if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
+continue;            // loop to recheck cases
+unparkSuccessor(h);
+}
+else if (ws == 0 &&
+!compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
+continue;                // loop on failed CAS
+}
+if (h == head)                   // loop if head changed
+break;
+}
+}
+可以看到和独占式锁释放不同的是，在共享模式下，状态同步和释放可以同时执行，其原子性由  来保证，如果头节点改变了也会继续循环。每次共享节点在共享模式下唤醒时，头节点都会指向它，这样就可以保证可以获取到共享锁的所有后续节点都可以唤醒了。
+在  等，其源码部分截图如下：
+通过上文可以知道，我们基于同步器可以分别自定义独占锁同步组件和共享锁同步组件，下面以实现一个在同一个时刻最多只允许 3 个线程访问，其它线程的访问将被阻塞的同步工具 ，同步状态的取值范围为 0、1、2、3，同步状态为 0 时表示没有可用同步资源，这个时候如果有线程访问将被阻塞。下面来看看这个自定义同步组件的实现代码：
+/**
+* @author mghio
+* @date: 2020-06-13
+* @version: 1.0
+* @description:
+* @since JDK 1.8
+*/
+public class TripletsLock implements Lock {
+private final Sync sync = new Sync(3);
+private static final class Sync extends AbstractQueuedSynchronizer {
+public Sync(int state) {
+setState(state);
+}
+Condition newCondition() {
+return new ConditionObject();
+}
+@Override
+protected int tryAcquireShared(int reduceCount) {
+for (; ;) {
+int currentState = getState();
+int newState = currentState - reduceCount;
+if (newState < 0 || compareAndSetState(currentState, newState)) {
+return newState;
+}
+}
+}
+@Override
+protected boolean tryReleaseShared(int count) {
+for (; ;) {
+int currentState = getState();
+int newState = currentState + count;
+if (compareAndSetState(currentState, newState)) {
+return true;
+}
+}
+}
+}
+@Override
+public void lock() {
+sync.acquireShared(1);
+}
+@Override
+public void lockInterruptibly() throws InterruptedException {
+sync.acquireInterruptibly(1);
+}
+@Override
+public boolean tryLock() {
+return sync.tryAcquireShared(1) > 0;
+}
+@Override
+public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
+return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+}
+@Override
+public void unlock() {
+sync.releaseShared(1);
+}
+@Override
+public Condition newCondition() {
+return sync.newCondition();
+}
+}
+下面启动 20 个线程测试看看自定义同步同步工具类  是否达到我们的预期。测试代码如下：
+/**
+* @author mghio
+* @date: 2020-06-13
+* @version: 1.0
+* @description:
+* @since JDK 1.8
+*/
+public class TripletsLockTest {
+private final Lock lock = new TripletsLock();
+private final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+@Test
+public void testTripletsLock() {
+// 启动 20 个线程
+for (int i = 0; i < 20; i++) {
+Thread worker = new Runner();
+worker.setDaemon(true);
+worker.start();
+}
+for (int i = 0; i < 20; i++) {
+second(2);
+System.out.println();
+}
+}
+private class Runner extends Thread {
+@Override
+public void run() {
+for (; ;) {
+lock.lock();
+try {
+second(1);
+System.out.println(dateFormat.format(new Date()) + " ----> " + Thread.currentThread().getName());
+second(1);
+} finally {
+lock.unlock();
+}
+}
+}
+}
+private static void second(long seconds) {
+try {
+TimeUnit.SECONDS.sleep(seconds);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+测试结果如下：
+从以上测试结果可以发现，同一时刻只有三个线程可以获取到锁，符合预期，这里需要明确的是这个锁获取过程是非公平的。
+本文主要是对同步器中的基础数据结构、独占式与共享式同步状态获取与释放过程做了简要分析，由于水平有限如有错误之处还请留言讨论。队列同步器  中很多的一些多线程并发工具类的实现基础框架，对其深入学习理解有助于我们更好的去使用其特性和相关工具类。
+参考文章

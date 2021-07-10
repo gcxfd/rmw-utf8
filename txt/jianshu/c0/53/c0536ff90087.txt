@@ -1,0 +1,84 @@
+hibernate 并没有创建foreign key 而是单纯做了索引
+hibernate 配置如下：
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Course.hbm.xml -->
+<!DOCTYPE hibernate-mapping PUBLIC
+"-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+"http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="cc.sirius.bean">
+<class name="Person">
+<id name="id" column="personId">
+<generator class="native"/>
+</id>
+<set name="addresses" table="PersonAddress">
+<key column="personId"/>
+<many-to-many column="addressId"
+class="Address"/>
+</set>
+</class>
+</hibernate-mapping>
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Course.hbm.xml -->
+<!DOCTYPE hibernate-mapping PUBLIC
+"-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+"http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="cc.sirius.bean">
+<class name="Address">
+<id name="id" column="addressId">
+<generator class="native"/>
+</id>
+<set name="people" inverse="true" table="PersonAddress">
+<key column="addressId"/>
+<many-to-many column="personId"
+class="Person"/>
+</set>
+</class
+>
+</hibernate-mapping>
+运行后查看表：
+mysql> show create table PersonAddress;
++---------------+----------------------------------
+---------------------------------------------------
+---------------------------------------------------
+---------------------------------------------------
+| Table         | Create Table
++---------------+----------------------------------
+---------------------------------------------------
+---------------------------------------------------
+---------------------------------------------------
+| PersonAddress | CREATE TABLE `personaddress` (
+`addressId` int(11) NOT NULL,
+`personId` bigint(20) NOT NULL,
+PRIMARY KEY (`personId`,`addressId`),
+KEY `FKA81B4EBF34EDEFEE` (`personId`),
+KEY `FKA81B4EBF4E1D97BA` (`addressId`),
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 |
++---------------+----------------------------------
+---------------------------------------------------
+经过一天多的反复研究，发现是的问题。
+关联的两个表中，一个或者两个表是MyISAM引擎的表。若想要使用外键约束，表必须是InnoDB引擎（实际上，如果两个表都是MyISAM 引擎的，这个错误根本不会发生，但也不会产生外键，只会建立索引）你需要检查表的引擎类型。
+具体的几种不能生成外键的原因可以看一下：
+--查看当前数据库支持的引擎列表
+show engines;
+--查看当前的默认引擎
+show variables like '%storage_engine%';
+--修改表引擎,这里不需要用到
+alter table table_name engine=innodb;
+<!-- 方言 -->
+<property name="hibernate.dialect">org.hibernate.dialect.MySQL5InnoDBDialect</property>
+这里mysql5.0以上是,以下就去掉5
+然后删库，重新自动生成：
+---------------------------------------------------------------+
+| personaddress | CREATE TABLE `personaddress` (
+`addressId` int(11) NOT NULL,
+`personId` bigint(20) NOT NULL,
+PRIMARY KEY (`personId`,`addressId`),
+KEY `FKA81B4EBF34EDEFEE` (`personId`),
+KEY `FKA81B4EBF4E1D97BA` (`addressId`),
+CONSTRAINT `FKA81B4EBF34EDEFEE` FOREIGN KEY (`personId`) REFERENCES `person` (
+`personId`),
+CONSTRAINT `FKA81B4EBF4E1D97BA` FOREIGN KEY (`addressId`) REFERENCES `address`
+(`addressId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 |
++---------------+---------------------------------------------------------------
+完成

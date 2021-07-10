@@ -1,0 +1,10 @@
+DrawRect         layoutSubview
+鏈接：http://www.jianshu.com/p/db23c036998
+-(BOOL)needsUpdateConstraints
+使用此返回值去决定是否需要 调用updateConstraints作为正常布局过程的一部分。
+- (void)setNeedsUpdateConstraints
+当一个自定义view的某个属性发生改变，并且可能影响到constraint时，需要调用此方法去标记constraints需要在未来的某个点更新，系统然后调用updateConstraints.
+- (void)updateConstraints
+更新约束，自定义view应该重写此方法在其中建立constraints. 注意：要在实现在最后调用[super updateConstraints]
+- (void)updateConstraintsIfNeeded
+立即触发约束更新，自动更新布局。

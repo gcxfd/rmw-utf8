@@ -1,0 +1,37 @@
+弹框的三种类（方式）
+第一个类
+UIAlertView:继承于UIView，类的对象为弹框。弹框在屏幕中央
+弹提示控件的方法(弹框)：提示控件为UIAlertView类型，创建一个UIAlertView类型的的对象后，使用VIAlertView对象的show方法，即可弹出创建的控件。控件控件可以使用该类的alloc、init方法。
+第一个参数为标题，第二个参数为内容，第三个为代理，第四个参数为取消按钮的内容（文字会加粗，此按钮的tag == 0），第五个参数为其他按钮(按钮字体不会加粗，tag依次增加)。
+- (instancetype)initWithTitle:(nullableNSString *)title message:(nullable NSString *)message delegate:(nullable id/**/)delegate cancelButtonTitle:(nullable NSString*)cancelButtonTitle otherButtonTitles:(nullable NSString *)otherButtonTitles,... NS_REQUIRES_NIL_TERMINATION NS_EXTENSION_UNAVAILABLE_IOS("UseUIAlertController instead.");
+UIAlertViewDelegate：UIAlertView的代理需要遵守的协议，遵守代理协议，可实现以下方法，当点击相应的按钮时，执行的方法，其中的buttonIndex为被点击按钮的tag
+-(void)alertView:(UIAlertView*) alertViewclickedButtonAtIndex:(NSInteger) buttonIndex NS_DEPRECATED_IOS(2_0, 9_0);
+保存UIAlertView对象类型的属性：
+@property(nonatomic,assign) UIAlertViewStylealertViewStyle NS_AVAILABLE_IOS(5_0); // Alert view style - defaults toUIAlertViewStyleDefault
+枚举变量（
+UIAlertViewStyleDefault默认值，不带文本框的样式
+UIAlertViewStyleSecureTextInput带一个密码文本框，勾选了secure属性的文本框
+UIAlertViewStylePlainTextInput一个普通的文本框
+UIAlertViewStyleLoginAndPasswordInput带两个文本框，一个是普通的文本框，一个是密码文本框）
+当有文本输入框时，根据按钮的tag返回对应的UITextField对象（前提是存在UITextField对象）
+- (nullable UITextField*)textFieldAtIndex:(NSInteger)textFieldIndex NS_AVAILABLE_IOS(5_0);
+// Retrieve a text field at an index
+// The field at index 0 will be the firsttext field (the single field or the login field), the field at index 1 will bethe password field. */
+第二个类
+UIActionSheet :继承于UIView，类的对象为弹框，弹框在屏幕底部，显示时需要使用对象的show方法。
+创建对象的方法：第一个参数为标题，第二个参数为代理，第三个参数为取消按钮内容，第四个参数为次要按钮内容，第五个参数为其他按钮。其按钮tag为从第四个参数依次增加，最后一个为tag为取消按钮的tag
+- (instancetype)initWithTitle:(nullableNSString *)title delegate:(nullable id)delegatecancelButtonTitle:(nullable NSString *)cancelButtonTitledestructiveButtonTitle:(nullable NSString *)destructiveButtonTitleotherButtonTitles:(nullable NSString *)otherButtonTitles, ...NS_REQUIRES_NIL_TERMINATION NS_EXTENSION_UNAVAILABLE_IOS("UseUIAlertController instead.");
+UIAlertViewDelegate：UIActionSheet代理需要遵守的协议，遵守代理协议，可实现以下方法，当点击相应的按钮时，执行的方法。其中的buttonIndex为被点击按钮的tag
+- (void)actionSheet:(UIActionSheet*)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndexNS_DEPRECATED_IOS(2_0, 8_3) __TVOS_PROHIBITED;
+UIAlertController :继承于UIViewController类，类的对象为弹框，
+创建对象的方法：第一个参数为标题，第二个参数为内容，第三个参数为为显示的样式。
+显示样式可选为UIAlertControllerStyleActionSheet\
+UIAlertControllerStyleAlert两种中的一种
++(instancetype)alertControllerWithTitle:(nullable NSString *)titlemessage:(nullable NSString *)messagepreferredStyle:(UIAlertControllerStyle)preferredStyle;
+为UIAlertController对象添加按钮时要声明UIAlertAction类的对象,并添加进当前的UIAlertController对象。方法为：参数为被添加的UIAlertAction对象。
+- (void)addAction:(UIAlertAction *)action;
+最后把创建的对象和按钮联系起来：调用方法的对象为当前的View（self），第二个参数可以写YES，第三个参数为block,当点击按钮时执行的代码，如果没有要执行的代码，则可写nil，在这个block中写代码时要注意内存管理，避免强指针的相互引用;
+-(void)presentViewController:(UIViewController *)viewControllerToPresentanimated: (BOOL)flag completion:(void (^ __nullable)(void))completionNS_AVAILABLE_IOS(5_0);
+UIAlertAction：继承于NSObject类。其创建的对象专门用于给UIAlertController对象添加按钮的类。
+创建对象的方法：第一个参数为按钮标题，第二个参数为按钮类型，第三个参数为点击按钮后执行的代码。按钮类型有三种：UIAlertActionStyleDefault= 0(为默认类型黑色)，UIAlertActionStyleCancel（加粗）,UIAlertActionStyleDestructive（红色）
++ (instancetype)actionWithTitle:(nullableNSString *)title style:(UIAlertActionStyle)style handler:(void (^ __nullable)(UIAlertAction*action))handler;

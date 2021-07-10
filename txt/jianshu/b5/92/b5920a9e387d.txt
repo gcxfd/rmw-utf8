@@ -1,0 +1,9 @@
+android drawtext 之baseline
+drawText( String text,   floatx,  floaty,  Paint paint)
+下面给出计算baseline的方法
+public int getBaseLine(int y, Paint mPaint) {
+Paint.FontMetrics fontMetrics = mPaint.getFontMetrics();
+floattop = fontMetrics.top;//为基线到字体上边框的距离,即上图中的top
+floatbottom = fontMetrics.bottom;//为基线到字体下边框的距离,即上图中的bottom
+return(int) (y + mPaint.getTextSize() /2- top /2- bottom /2);//基线中间点的y轴计算公式
+}

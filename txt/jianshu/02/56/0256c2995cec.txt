@@ -1,0 +1,266 @@
+Java并发编程
+个人博客：
+这个问题肯定是错的，并发比串行慢的原因在于：
+即使是单核处理器也支持多线程执行代码，CPU通过给每个线程分配CPU时间片来实现这个机制。CPU通过时间片分配的算法来循环执行任务，当前任务执行一个时间片后会切换到下一个任务。但是，在切换前会保持上一个任务的状态，以便下次切换回这个任务时，可以再加之这个任务的状态。所以
+如何减少上下文切换
+--
+资源限制指的是程序的执行速度受限于计算机硬件资源或软件资源，如服务器的带宽只有2Mb/s,某个资源的下载速度为1Mb/s,系统启动10个线程去下载资源，下载速度不会变成10Mb/s，所以在进行并发的时候回考虑资源的限制。硬件资源限制有带宽的上传/下载速度、硬盘的读写速度和CPU的处理速度。软件资源限制有数据库的连接数和socket连接数等。
+资源限制引来的问题：为了将代码执行速度加快将代码中串行执行的部分变成并发执行，因为资源受限，仍然在串行执行，这时候程序不仅不会加快，反而会变慢，因为增加了上下文切换和资源调度的时间。
+如何解决资源限制问题：可以使用集群并行执行程序，既然单机的资源有限，那么可以让程序在多机上运行，比如使用ODPS、Hadoop或者自己搭个服务器集群，不同的机器处理不同的数据，可以通过“数据ID%机器数”，计算得到一个机器编号，然后由对应编号的机器处理这个数据，对于软件资源受限，可以使用资源池来复用如使用连接池将数据库和Socket连接复用，或者在调用对方webservice接口获取数据只建立一个连接。
+Java代码在编译后会变成Java字节码，字节码被类加载器加载到JVM里，JVM执行字节码，最终需要转化为汇编指令在CPU上执行，Java所使用的并发机制依赖于JVM的实现和CPU的指令
+volatile是轻量级的synchronized，在多处理器并发中保证了共享变量的
+volatile在java代码转换为汇编代码 会多了一个Lock前缀的指令，在多核处理器下发生两件事情
+为了提高处理速度，处理器不直接和内存通信，而是将系统内存的数据读到内部缓存（L1，L2或其他）后再进行操作，但操作完不知道何时回写到内存，如果声明了volatile的变量进行写操作，JVM就会向处理器发送一条Lock前缀的指令，将这个变量所在缓存行的数据写回到系统内存，但是就是写会内存，如果其他处理器缓存的值还是旧的，再执行计算操作就会有问题，所以在多处理器下为了保证各个处理器的缓存是一致，就会执行缓存一致性协议，每个处理器通过嗅探在总线上传播的数据来检查自己的缓存值是否过期，当处理器发现自己缓存行所对应的内存地址被修改，就会将当前处理器缓存行设置为无效，当处理器对数据进行修改操作，会重新从系统内存读到处理器缓存中
+javase1.6 对synchronized进行各种优化，过去被人称为重量级锁。
+java每个对象都是锁
+synchronized用的锁是存在Java对象头里的。Java对象头里的Mark Word力默认储存对象的HashCode，分代年龄和锁标记位。
+Javase1.6中 锁一共有4种状态，级别从低到高为：无锁状态、偏向锁状态、轻量级锁状态和重量级锁状态，这几个状态会随着竞争情况逐渐升级。，目的是为了提高获得锁和释放锁的效率
+public class Counter {
+private AtomicInteger atomicI = new AtomicInteger(0);
+private int i = 0;
+public static void main(String[] args) {
+final Counter cas = new Counter();
+List<Thread> ts = new ArrayList<Thread>(600);
+long start = System.currentTimeMillis();
+for (int j = 0; j < 100; j++) {
+Thread t = new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < 10000; i++) {
+cas.count();
+cas.safeCount();
+}
+}
+});
+ts.add(t);
+}
+for (Thread t : ts) {
+t.start();
+}
+// 等待所有线程执行完成
+for (Thread t : ts) {
+try {
+t.join();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+System.out.println(cas.i);
+System.out.println(cas.atomicI.get());
+System.out.println(System.currentTimeMillis() - start);
+}
+/**
+* 使用CAS实现线程安全计数器
+*/
+private void safeCount() {
+for (;;) {
+int i = atomicI.get();
+boolean suc = atomicI.compareAndSet(i, ++i);
+if (suc) {
+break;
+}
+}
+}
+/**
+* 非线程安全计数器
+*/
+private void count() {
+i++;
+}
+}
+CAS实现原子操作的三大问题
+内容较多涉及到内存模型、重排序
+double_check的问题
+public class DoubleCheckedlocking{
+private static Instance instance;
+public static Instance getInstance(){
+if(instance==null){
+synchronized(DoubleCheckedlocking.class){
+if(instance==null)
+instance=new Instance();
+}
+}
+}
+}
+//根据重排序可能会出现的问题
+instance=new Instance()常见一个对象可以分成三步
+memory=allocate(),//1.分配对象的内存空间
+ctorInstance（memory)//2.初始化对象
+instance=memory //3.设置Instance指向刚分配的内存地址
+如果2,3 重排序颠倒后  if语句就可以是引用是上存在但是对象还未被初始化，所以 可以给Instance加上一个volatile因为内存屏障的缘故
+锁是用来控制多个线程访问共享资源的方式，一般来说，一个锁能够防止多个线程同时访问共享资源，但是有些锁可以运行多个线程并发的访问共享资源，比如读写锁。Lock接口和synchronized可以通过获取锁和释放锁，但是前者比后者更具扩展性。
+Lock是一个接口，定义了锁获取和释放的基本操作
+Lock和synchronized区别
+Lock接口的APi
+队列同步器AbstractQueuedSynchronizer（以下简称同步器），是用来构建锁或者其他同步组件的基础框架，
+public class Mutex implements Lock {
+private static class Sync extends AbstractQueuedSynchronizer {
+@Override
+protected boolean isHeldExclusively() {
+return getState() == 1;
+}
+@Override
+protected boolean tryAcquire(int arg) {
+if (compareAndSetState(0, 1)) {
+setExclusiveOwnerThread(Thread.currentThread());
+return true;
+}
+return false;
+}
+@Override
+protected boolean tryRelease(int arg) {
+if (getState() == 0) throw new IllegalMonitorStateException();
+setExclusiveOwnerThread(null);
+setState(0);
+return true;
+}
+Condition newCondition() {
+return new ConditionObject();
+}
+}
+private final Sync sync = new Sync();
+@Override
+public void lock() {
+sync.acquire(1);
+}
+@Override
+public void lockInterruptibly() throws InterruptedException {
+sync.acquireInterruptibly(1);
+}
+@Override
+public boolean tryLock() {
+return sync.tryAcquire(1);
+}
+@Override
+public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+return sync.tryAcquireNanos(1, unit.toNanos(time));
+}
+@Override
+public void unlock() {
+sync.release(1);
+}
+@Override
+public Condition newCondition() {
+return sync.newCondition();
+}
+}
+以上是独占式锁是一个自定义的同步组件，在同一个时刻指运行一个线程占有锁，用户在使用Mutex并不会直接和内部同步器打交道，而是调用Mutex提供的方法，在Mutex的实现中，获取锁Lock方法。
+同步队列
+--
+同步器依赖内部的同步队列（一个FIFO双向队列）来完成同步状态的管理。同步队列中的节点（Node）用来保存"获取同步状态失败的线程"引用、等待状态以及前驱和后继节点。
+当前线程获取同步状态失败时，同步器会将当前线程、等待状态等信息构造成为一个节点（Node）并将其加入同步队列，同时会”“阻塞”当前线程。当一个线程成功地获取了同步状态（或者锁），其他线程将无法获取到同步状态，转而被构造成为节点并加入到同步队列中，而这个加入队列的过程必须要保证线程安全。同步器提供了一个基于CAS的设置尾节点的方法：compareAndSetTail(Nodeexpect,Nodeupdate)，它需要传递当前线程“认为”的尾节点和当前节点，只有设置成功后，当前节点才正式与之前的尾节点建立关联。
+主要逻辑：首先调用自定义同步器实现的tryAcquire(int arg)方法，该方法保证线程安全的获取同步状态，如果同步状态获取失败，则构造同步节点（独占式Node.EXCLUSIVE，同一时刻只能有一个线程成功获取同步状态）并通过addWaiter(Node node)方法将该节点加入到同步队列的尾部，最后调用acquireQueued(Node node,int arg)方法，使得该节点以“死循环”的方式获取同步状态
+//将节点加入到同步队列的尾部
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);//“生成节点”
+// Try the fast path of enq; backup to full enq on failure
+//快速尝试在尾部添加
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;//先将当前节点node的前驱指向当前tail
+if (compareAndSetTail(pred, node)) {//CAS尝试将tail设置为node
+//如果CAS尝试成功，就说明"设置当前节点node的前驱"与"CAS设置tail"之间没有别的线程设置tail成功
+//只需要将"之前的tail"的后继节点指向node即可
+pred.next = node;
+return node;
+}
+}
+enq(node);//否则，通过死循环来保证节点的正确添加
+return node;
+}
+private Node enq(final Node node) {
+for (;;) {//通过死循环来保证节点的正确添加
+Node t = tail;
+if (t == null) { // Must initialize 同步队列为空的情况
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {//直到CAS成功为止
+t.next = node;
+return t;//结束循环
+}
+}
+}
+}
+上述代码通过使用compareAndSetTail（Node expect,Node update)来确保节点能够被线程安全添加，如果使用普通的LinkedList来维护节点之间的关系，那么当一个线程获取到同步状态，而其他多个线程由于调用tryAcquire（int arg）方法获取同步状态失败而并发被添加到LinkedList，LinkedList将难以保证Node的正确添加
+在enq(final Node node)方法中，同步器通过“死循环”来保证节点的正确添加，在“死循环”中只有通过CAS将节点设置成为尾节点之后，当前线程才能从该方法返回，否则，当前线程不断地尝试设置。可以看出，enq(final Node node)方法将并发添加节点的请求通过CAS变得“串行化”了。
+节点自旋
+--
+节点进入同步队列之后，就进入了一个自旋的过程，每个节点（或者说是线程）都在自省地观察，当条件满足，获取到了同步状态，就可以从这个自旋过程中退出，否则依旧留在这个自旋过程中。
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {//无限循环
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {//前驱节点是首节点且获取到了同步状态
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;//从自旋中退出
+}
+if (shouldParkAfterFailedAcquire(p, node) &&//判断获取同步状态失败后是否需要阻塞
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+以文件的读写为例，如果一个程序在对文件进行读操作，那么这一时刻对于该文件的写操作均被阻塞，而读操作能够同时进行。写操作要求对资源的独占式访问，而读操作可以是共享式访问
+调用同步器的acquireShared(int arg)方法可以共享式地获取同步状态。
+public final void acquireShared(int arg) {
+if (tryAcquireShared(arg) < 0)
+doAcquireShared(arg);
+}
+private void doAcquireShared(int arg) {
+final Node node = addWaiter(Node.SHARED);
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head) {
+int r = tryAcquireShared(arg);
+if (r >= 0) {
+setHeadAndPropagate(node, r);
+p.next = null; // help GC
+if (interrupted)
+selfInterrupt();
+failed = false;
+return;
+}
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+在acquireShared(int arg)方法中，同步器调用tryAcquireShared(int arg)方法尝试获取同步状态，tryAcquireShared(int arg)方法返回值为int类型，当返回值大于等于0时，表示能够获取到同步状态。因此，在共享式获取的自旋过程中，成功获取到同步状态并退出自旋的条件就是tryAcquireShared(int arg)方法返回值大于等于0。
+在doAcquireShared(int arg)方法的自旋过程中，如果当前节点的前驱为头节点时，尝试获取同步状态，如果返回值大于等于0，表示该次获取同步状态成功并从自旋过程中退出。
+重入锁
+--
+它表示该锁能够支持一个线程对资源的重复加锁。除此之外，该锁的还支持获取锁时的公平和非公平性选择
+之前的例子，当一个线程调用Mutex的lock()方法获取锁之后，如果再次调用lock()方法，则该线程将会被自己所阻塞，原因是Mutex在实现tryAcquire(int acquires)方法时没有考虑占有锁的线程再次获取锁的场景，而在调用tryAcquire(int acquires)方法时返回了false，导致该线程被阻塞。简单地说，Mutex是一个不支持重进入的锁。
+公平锁与非公平锁的比较
+--
+公平性锁每次都是从同步队列中的第一个节点获取到锁，而非公平性锁出现了一个线程连续获取锁的情况。
+非公平性锁可能使线程“饥饿”，当一个线程请求锁时，只要获取了同步状态即成功获取锁。在这个前提下，刚释放锁的线程再次获取同步状态的几率会非常大，使得其他线程只能在同步队列中等待。
+为什么它又被设定成默认的实现呢？非公平性锁模式下线程上下文切换的次数少，因此其性能开销更小。公平性锁保证了锁的获取按照FIFO原则，而代价是进行大量的线程切换。非公平性锁虽然可能造成线程“饥饿”，但极少的线程切换，保证了其更大的吞吐量。
+读写锁在同一时刻可以允许多个读线程访问，但是在写线程访问时，所有的读线程和其他写线程均被阻塞。
+读写锁维护了一对锁，一个读锁和一个写锁，通过分离读锁和写锁，使得并发性相比一般的排他锁有了很大提升。除了保证写操作对读操作的可见性以及并发性的提升之外，读写锁能够简化读写交互场景的编程方式。在读多于写的情况下，读写锁能够提供比排它锁更好的并发性和吞吐量。Java并发包提供读写锁的实现是ReentrantReadWriteLock。
+ConcurrentHashMap是线程安全且高效的HashMap。
+为什么使用ConcurrentHashMap的原因
+具体的实现及原理
+Fork/Join框架是Java7提供了的一个用于并行执行任务的框架， 是一个把大任务分割成若干个小任务，最终汇总每个小任务结果后得到大任务结果的框架。
+工作窃取算法
+--
+指某个线程从其他队列里窃取任务来执行。假如我们需要做一个比较大的任务，我们可以把这个任务分割为若干互不依赖的子任务，为了减少线程间的竞争，于是把这些子任务分别放到不同的队列里，并为每个队列创建一个单独的线程来执行队列里的任务，线程和队列一一对应，比如A线程负责处理A队列里的任务。但是有的线程会先把自己队列里的任务干完，而其他线程对应的队列里还有任务等待处理。干完活的线程与其等着，不如去帮其他线程干活，于是它就去其他线程的队列里窃取一个任务来执行。而在这时它们会访问同一个队列，所以为了减少窃取任务线程和被窃取任务线程之间的竞争，通常会使用双端队列，被窃取任务线程永远从双端队列的头部拿任务执行，而窃取任务的线程永远从双端队列的尾部拿任务执行。优点是充分利用线程进行并行计算，并减少了线程间的竞争。
+参考文章
+java并发编程的艺术

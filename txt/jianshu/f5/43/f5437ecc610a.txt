@@ -1,0 +1,43 @@
+一行代码实现IOS runtime知识
+在项目中我们可能会使用runtime做一下操作，当然我们可能都接触过runtime，有的已经很熟悉了，有的也可能不是特别清楚，我自己也对runtime做了一下小小的封装，让大家更好的使用runtime，先看一下效果吧。
+使用起来也很简单：
+导入  头文件
+NSArray *list = [TFRuntimeManager TF_getAllIvarWithClass:[UIButton class]];
+NSArray *list = [TFRuntimeManager TF_getAllMethodWithClass:[UIButton class]];
+[TFRuntimeManager TF_exchangeMethodSourceClass:[UIButton class] sourceSel:@selector(setTitle:forState:) targetClass:[self class] targetSel:@selector(setTitleName: withState:)];
+[TFRuntimeManager TF_replaceMethodSourceClass:[UIButton class] sourceSel:@selector(setTitle:forState:)  targetClass:[self class] targetSel:@selector(setTitleName: withState:)];
+NSDictionary *dic = @{@"name":self.name.text ,
+@"gender":self.gender.text,
+@"age":self.age.text};
+TFChangeModel *model = [TFRuntimeManager TF_modelWithDict:dic model:[TFChangeModel class]];
+//创建路径
+NSString *documentPath      = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES)lastObject];
+NSString *filePath          = [documentPath stringByAppendingPathComponent:@"TFChangeModel.plist"];
+TFChangeModel *model        = [[TFChangeModel alloc] init];
+model.name                  = @"张三";
+model.gender                = @"男";
+model.age                   = @"25";
+//归档
+BOOL result = [TFRuntimeManager TF_archive:[model class] model:model filePath:filePath];
+//解档
+model  = [TFRuntimeManager TF_unarchive:[TFChangeModel class] filePath:filePath];
+这就是我的一些封装，主要的实现都在<code>TFRuntimeManager</code>类中，可以快速使用runtime，具体的实现大家可以下载demo查看：
+最后补充一下在分类中利用runtime来添加属性
+1、导入头文件#import <objc/message.h>
+2、声明属性
+/**题目 */
+@property (nonatomic , strong)UILabel *title;
+3、申明一个key值
+static NSString *TFTitleKey       = @"TFTitleKey";
+4、重写set、get方法
+//get方法
+- (UILabel *)title {
+return objc_getAssociatedObject(self, &TFTitleKey);
+}
+//set方法
+- (void)setTitle:(UILabel *)title {
+objc_setAssociatedObject(self, &TFTitleKey, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+这样就成功添加了一个属性。
+希望大家能提出宝贵的意见，可以给我留言，也可以发邮件到我的邮箱：
+谢谢大家，如果你有更好的想法或文章请告知，不胜感激。

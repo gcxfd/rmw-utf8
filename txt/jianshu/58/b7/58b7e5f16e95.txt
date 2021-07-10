@@ -1,0 +1,343 @@
+JAVA并发编程（七）AQS源码简析
+AQS:AbstractQueuedSynchronizer直译"（抽象）队列同步器"。AQS是java.util.concurrent的核心类。它是构建同步器的模板。java.util.concurrent包中很多锁和其它并发工具类都依靠AQS或其子类实现相关功能。看下图：
+AQS类图如下：
+AQS中有两个成员类 Node 和 ConditionObject。
+ConditionObject实现了Condition接口，是同步器的内部类。一个ConditionObject对象对应一个等待队列，实现实现线程间的等待通知等关键功能。ConditionObject对wait/notify关键字的功能实现了覆盖、扩展。
+signal()：唤醒特定等待队列中头结点对应的线程。将对应节点从等待队列移动到同步队列。
+signalAll()：唤醒特定等待队列中的所有线程。从等待队列头结点开始遍历等待队列，逐个signal。
+await()：从同步队列中释放，将当前线程包装成新的节点加入到等待队列中等待。
+await衍生方法：awaitUninterruptibly()、awaitNanos(long nanosTimeout)、awaitUntil(Date deadline)、await(long time, TimeUnit unit)。
+以上方法为Condition接口中定义方法的实现。
+firstWaiter: 等待队列的头结点
+lastWaiter: 等待队列的尾节点
+Node是同步队列、等待队列中节点的类型。每个Node都保存有同步队列前后序节点信息及等待队列后序节点信息。还有一个比较重要的属性是等待状态waitStatus。详见下面分析。
+waitStatus：节点的等待状态。
+prev：同步队列的前序节点
+next：同步队列的后序节点
+thread：当前Node对应的线程。线程进入同步队列前会将自身包装成一个Node。
+nextWaiter：等待队列的后序节点
+state：同步状态。AQS中提供compareAndSetState方法保障状态设置的原子性。 独占模式下：一般0表示同步器未被占用，1、2、3...N表示同步器被占用。1、2、3...N代表重入的次数。这块与可重入锁相关。
+exclusiveOwnerThread：同步器的独占线程。顾名思义。继承自AbstractOwnableSynchronizer。
+head：同步队列头结点
+tail：同步队列尾节点
+AQS中有两个关键的数据结构：同步队列和等待队列。同步队列中的节点等待获取同步状态。等待队列中的节点等待（条件成熟）被通知通知，然后移动到同步队列等待获取同步状态。
+同步队列是一个非阻塞的 FIFO双向队列。通过自旋和 CAS操作保证节点插入的原子性。实现无锁快速插入。每次移除的都是head节点，故移除操作不存在竞争。
+同步队列的head节点永远是一个哑结点（dummy node), 它不关联任何线程。
+如多个线程竞争同步状态，当前线程未能获得同步状态。当前线程会被包装成节点加入到同步队列队尾（自旋中进行CAS操作，直到成功）。
+当前线程获得同步状态时（如执行ReentrantLock的lock方法成功），会释放头结点。同时将当前线程对应的节点设为头结点：
+一个Condition对应一个等待队列。实现和扩展等待通知（wait/notify）模式。等待队列是一个单向队列。
+当前线程执行require方法时，如果成功获取同步状态，头结点会被释放。而执行conditionA.await方法会将当前线程包装成一个新的，等待状态为CONDITION的Node节点加入到conditionA等待队列的尾部。实际上不存在移动。而是1.从同步队列中移除 2.在等待队列尾部加入一个新的等待节点 两步操作。（第2.部操作后当前线程才会释放同步状态。避免竞争。）
+调用conditionA.signal方法时，会把conditionA对应等待队列的头结点从等待队列移除（1.firstWaiter指向原有头结点的下一个合法节点 2.原有头结点的nextWaiter属性设为null）。然后将这个节点等待状态设置为0放入同步队列。
+tryAcquire：独占式获取
+tryRelease：独占式释放
+tryAcquireShared：共享式获取
+tryReleaseShared：共享式释放
+isHeldExclusively：这个同步器是否被独占式获得。
+AQS应用模板方法设计模式。模板方法（Template Method）模式：定义一个操作中的算法骨架，而将算法的一些步骤延迟到子类中，使得子类可以不改变该算法结构的情况下重定义该算法的某些特定步骤。它是一种类行为型模式。
+核心方法的调用逻辑及部分基础方法已经写好。子类仅需覆盖实现上述方法。便可实现同步器的相关功能。
+以ReentrantLock为例，分析lock、unlock的流程。
+ReentrantLock中包含Sync sync(同步器)成员属性。Sync继承AQS。Sync 有两个子类FairSync和NonfairSync。直译是“公平同步器”和“非公平同步器”。它们分别是公平锁和非公平锁的实现的核心。在ReentrantLock构造时可传入同步器使用FairSync或是NonfairSync。默认使用NonfairSync。
+ReentrantLock的lock、unlock核心方法均由同步器实现。
+流程图如下：
+请结合流程图理解下面的方法分析。
+/**
+* 调用成员属性Sync sync的lock方法实现功能
+*/
+public void lock() {
+sync.lock();
+}
+没啥好说的，直接调用了同步器的lock方法。默认情况下：ReentrantLock默认同步器的类型为NonfairSync。
+/**
+* Performs lock.  Try immediate barge, backing up to normal
+* acquire on failure.
+*/
+final void lock() {
+if (compareAndSetState(0, 1))
+setExclusiveOwnerThread(Thread.currentThread());
+else
+acquire(1);
+}
+CAS操作设定同步状态。如果成功则将当前线程设定为同步器的独占线程。如果失败则调用AQS实现的获取同步状态的方法acquire。
+/**
+* Acquires in exclusive mode, ignoring interrupts.  Implemented
+* by invoking at least once {@link #tryAcquire},
+* returning on success.  Otherwise the thread is queued, possibly
+* repeatedly blocking and unblocking, invoking {@link
+* #tryAcquire} until success.  This method can be used
+* to implement method {@link Lock#lock}.
+*
+* @param arg the acquire argument.  This value is conveyed to
+*        {@link #tryAcquire} but is otherwise uninterpreted and
+*        can represent anything you like.
+*/
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+调用Sync的tryAcquire方法。如果成功，则lock过程结束。如果失败则调用AQS中实现的addWaiter、acquireQueued方法。
+addWaiter：将当前线程包装成节点，加入同步队列的尾部。
+acquireQueued：自旋判断：当前线程对应的节点是否满足执行条件/阻塞条件。如果满足则做对应的操作。
+addWaiter、acquireQueued详细分析见下文。
+/**
+*
+*【NonfairSync实现】尝试获取同步状态。不管成功与否立即返回
+* @param acquires
+* @return
+*/
+protected final boolean tryAcquire(int acquires) {
+return nonfairTryAcquire(acquires);
+}
+/**
+*【Sync实现】非公平尝试获取同步状态。所谓非公平即：非先到先得
+* Performs non-fair tryLock.  tryAcquire is implemented in
+* subclasses, but both need nonfair try for trylock method.
+*/
+*/
+final boolean nonfairTryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();
+if (c == 0) {
+if (compareAndSetState(0, acquires)) {
+setExclusiveOwnerThread(current);
+return true;
+}
+} else if (current == getExclusiveOwnerThread()) {
+int nextc = c + acquires;
+if (nextc < 0) // overflow
+throw new Error("Maximum lock count exceeded");
+setState(nextc);
+return true;
+}
+return false;
+}
+如果同步状态status为0（0代表当前同步器未被线程占用），则进行一次CAS操作设定同步状态。如果设定同步状态成功。则继续操作，将当前线程设定为同步器的独占线程。
+如果同步状态不为0且当前线程是同步器的独占线程（说明当前线程正持有锁）。则将同步状态累加（可重入锁的逻辑）。由于当前线程是同步器的独占线程，不存在竞争，设定同步状态使用普通赋值操作setState即可。
+/**
+* Creates and enqueues node for current thread and given mode.
+*
+* @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
+* @return the new node
+*/
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);
+return node;
+}
+将当前线程包装成一个节点Node。
+如果同步队列不为空，则进行一次CAS操作将当前节点设置成尾节点。否则不执行。
+如果设置成功，则方法返回：将Node对象作为参数传递给acquireQueued方法。
+执行enq方法进行入队（同步队列）自旋。
+/**
+* Inserts node into queue, initializing if necessary. See picture above.
+* @param node the node to insert
+* @return node's predecessor
+*/
+private Node enq(final Node node) {
+for (; ; ) {
+Node t = tail;
+if (t == null) { // Must initialize
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+主要是一个自旋CAS入队操作，直到成功。自旋中的逻辑：
+如果队列为空则new一个Node对象设置成头结点。（这里有一个知识点要注意。同步队列的头结点不关联任何线程，是一个哑结点Dummy Node。所以当队列为空时，必须先new一个Node放到头部）。
+如果队列非空。则将当前节点的前序节点设为尾节点tail。然后执行CAS操作将当前节点设为尾节点。如果成功，则将原有尾节点的next元素设为当前节点，将尾节点（即当前节点）作为参数返回给acquireQueued方法。如果失败则继续自旋直到成功。
+/**
+*【AQS实现】阻塞节点或者头结点出队
+* Acquires in exclusive uninterruptible mode for thread already in
+* queue. Used by condition wait methods as well as acquire.
+*
+* @param node the node
+* @param arg the acquire argument
+* @return {@code true} if interrupted while waiting
+*/
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (; ; ) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+自旋获取同步状态或在自旋中阻塞。方法主体也是一个自旋操作，返回是否在等待时中断。
+自旋操作中：
+1.判断 node.predecessor() == head && tryAcquire(arg)。如果为true，则原有头结点出队，将当前节点设置成头结点（setHead方法中会将节点关联的线程设置为null），返回中断标志位。
+2.当前节点是否应该阻塞（分析见下文）。如果是，则调用parkAndCheckInterrupt阻塞当前线程，并将当前线程的中断标志位返回给acquire方法，同时复位线程的中断状态。这里保存了线程被阻塞前的中断状态。
+3.如果没有返回/阻塞，则继续自旋。
+/**
+* Checks and updates status for a node that failed to acquire.
+* Returns true if thread should block. This is the main signal
+* control in all acquire loops.  Requires that pred == node.prev.
+*
+* @param pred node's predecessor holding status
+* @param node the node
+* @return {@code true} if thread should block
+*/
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+/*
+* This node has already set status asking a release
+* to signal it, so it can safely park.
+*/
+return true;
+if (ws > 0) {
+/*
+* Predecessor was cancelled. Skip over predecessors and
+* indicate retry.
+*/
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+/*
+* waitStatus must be 0 or PROPAGATE.  Indicate that we
+* need a signal, but don't park yet.  Caller will need to
+* retry to make sure it cannot acquire before parking.
+*/
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+判断前序节点的等待状态：
+如果等待状态是SIGNAL（等待唤醒；release操作会唤醒同步队列中头结点的下一个节点对应的线程）。是返回true。
+如果等待状态大于0（即CANCELLED状态）则追溯前序节点，将CANCELLED状态的前序节点移出同步队列。直到前序节点状态小于等于0。返回false。（在acquireQueued中继续自旋）
+如果是其它情况则进行CAS操作将前序节点的状态设为SIGNAL。返回false。（在acquireQueued中继续自旋）
+/**
+* Convenience method to park and then check if interrupted
+*
+* @return {@code true} if interrupted
+*/
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+阻塞当前线程。返回中断标志位，并将中断标志位复位（设为false）。
+流程图如下：
+请结合流程图理解下面的方法分析。
+/**
+* Attempts to release this lock.
+*
+* <p>If the current thread is the holder of this lock then the hold
+* count is decremented.  If the hold count is now zero then the lock
+* is released.  If the current thread is not the holder of this
+* lock then {@link IllegalMonitorStateException} is thrown.
+*
+* @throws IllegalMonitorStateException if the current thread does not
+*         hold this lock
+*/
+public void unlock() {
+sync.release(1);
+}
+/**
+* Releases in exclusive mode.  Implemented by unblocking one or
+* more threads if {@link #tryRelease} returns true.
+* This method can be used to implement method {@link Lock#unlock}.
+*
+* @param arg the release argument.  This value is conveyed to
+*        {@link #tryRelease} but is otherwise uninterpreted and
+*        can represent anything you like.
+* @return the value returned from {@link #tryRelease}
+*/
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+调用tryRelease尝试释放同步状态：
+如果成功，且队列不为空&&头结点的等待状态不为0，则唤醒后续节点。
+protected final boolean tryRelease(int releases) {
+int c = getState() - releases;
+if (Thread.currentThread() != getExclusiveOwnerThread())
+throw new IllegalMonitorStateException();
+boolean free = false;
+if (c == 0) {
+free = true;
+setExclusiveOwnerThread(null);
+}
+setState(c);
+return free;
+}
+如果当前线程不是同步器的独占线程，则抛异常。如果当前线程是同步器的独占线程（持有锁）则继续执行下面的逻辑：
+1.判断状态同步状态是否为0（...可重入锁..）。如果是，则将释放标志位置为true，同时将同步器的独占线程设为null。如果不是，则不作操作。
+2.设置同步状态为getState() - releases。（由于当前线程为同步器的独占线程，不存在竞争。故仅需用普通的赋值操作setState设定同步状态）。
+/**
+* Wakes up node's successor, if one exists.
+*
+* @param node the node
+*/
+private void unparkSuccessor(Node node) {
+/*
+* If status is negative (i.e., possibly needing signal) try
+* to clear in anticipation of signalling.  It is OK if this
+* fails or if status is changed by waiting thread.
+*/
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+/*
+* Thread to unpark is held in successor, which is normally
+* just the next node.  But if cancelled or apparently null,
+* traverse backwards from tail to find the actual
+* non-cancelled successor.
+*/
+Node s = node.next;
+if (s == null || s.waitStatus > 0) {
+s = null;
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+if (s != null)
+LockSupport.unpark(s.thread);
+}
+主要功能：唤醒后续节点
+1.如果当前节点等待状态waitStatus小于0（即CONDITION或SIGNAL或PROPAGATE），则进行CAS操作将当前节点的等待状态设为0。
+2.如果后续节点为空或者后续节点等待状态为CANCELLED。则从尾节点开始向前追溯，直到当前节点的前一个节点。取离当前节点最近且等待状态不为CANCELLED的节点对应的线程作为被唤醒的线程。
+不展开分析，方法逻辑及调用流程见下图。
+ConditionObject.await方法流程如下
+Condition.signal方法流程如下
+await/signal过程中节点在等待队列、同步队列之间的移动见 章节2.3.2。
+关于await/signal，这里引用的一段话
+需要注意的是：一般情况下，实现线程等待通知使用wait()和notifyAll()方法，而不用notify()方法。或者ConditionObject实现的await()、signal()、signalAll()方法。
+这是因为：
+1.使用原生关键字synchronized，代码中无从得知有多少种类型的线程。不同类型的线程获取对象的锁之后，判定是否可执行的条件并不相同。如接机线程、摆渡车线程，一个是判断城市、一个判断行距。如果仅通知一个：极端情况下，notify的都是不符合执行条件的线程，而这些线程又马上进入阻塞状态。符合执行条件的线程永远不会被唤醒。故需要通知所有在这个对象资源上等待的线程。
+2.Condition是代码可控的条件。如我们可以声明一个接机的Condition、一个摆渡车的Condition。两个Condition下分别对应一个等待队列。当位置变化时，我们分别通知接机Condition和摆渡车Condition等待队列中第一个线程。这样就能够保障符合执行条件的线程能够被唤醒。优雅地实现基于多个条件的等待与通知操作。
+lock、unlock、await、signal的流程图整理足足用了两周的业余时间。有些代码写的真的反人类：一行之中涉及几层函数调用、能省"{}"就省、传递赋值等等，令人费解。整理完再次过这些流程时有种豁然开朗、受益匪浅的感觉。真正理解AQS的源码之美（自旋中阻塞、唤醒，节点在队列间的移动、状态变化，CAS操作自旋入队...），要实际走一遍代码。
+最后安利一下：源码分析是程序猿自我修养的组成部分。源码分析不仅仅能帮助我们理解通用组件/框架的工作原理，从而让我们能更好地应用这些组件/框架。还可以让我们学习到其中的编码思想及控制流转逻辑，状态变换、传递机制，数据结构等等，在实际项目中应用。

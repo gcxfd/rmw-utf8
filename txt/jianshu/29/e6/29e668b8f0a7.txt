@@ -1,0 +1,12 @@
+Primavera Unifier 笔记
+– Shell(外壳程序)
+• 类似一个容器，用于把一组业务信息和功能模块汇集在一起，便以管理。
+– Shell实例
+• 按照Shell类型定义创建的一个实体。
+– Shell层级
+• 可以在Shell之间定义层级关系，底层Shell的数据可以汇总到顶层Shell
+• 在定义Shell层级时，不能出现循环嵌套的情况。
+– Shell类型
+• 根据可以创建的实例数量，可以把Shell分为单实例Shell和多实例Shell，单实例Shell用作根节点。
+没了
+就这么点儿名词解释 什么JB

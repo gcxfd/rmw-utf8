@@ -1,0 +1,339 @@
+Android 面试之 Java 篇三
+本文出自
+本文收集整理了 Android 面试中会遇到与 Java 知识相关的简述题。
+线程是一个动态执行的过程，它也有一个从产生到死亡的过程。
+下图显示了一个线程完整的生命周期。
+程序是一段静态的代码。一个进程可以有一个或多个线程，每个线程都有一个唯一的标识符。
+进程和线程的区别为：进程空间大体分为数据区、代码区、栈区、堆区。多个进程的内部数据和状态都是完全独立的；而线程共享进程的数据区、代码区、堆区，只有栈区是独立的，所以线程切换比进程切换的代价小。
+多线程技术是使得单个程序内部可以在同一时刻执行多个代码段，完成不同的任务，这种机制称为多线程。同时并不是指真正意义上的同一时刻，而是指多个线程轮流占用CPU的时间片。
+简而言之，一个程序至少有一个进程，一个进程至少有一个线程。
+线程的划分尺度小于进程，使得多线程程序的并发性高。
+另外，进程在执行过程中拥有独立的内存单元，而多个线程共享内存，从而极大地提高了程序的运行效率。
+线程在执行过程中与进程还是有区别的。每个独立的线程有一个程序运行的入口、顺序执行序列和程序的出口。但是线程不能够独立执行，必须依存在应用程序中，由应用程序提供多个线程执行控制。
+从逻辑角度来看，多线程的意义在于一个应用程序中，有多个执行部分可以同时执行。但操作系统并没有将多个线程看做多个独立的应用，来实现进程的调度和管理以及资源分配。这就是进程和线程的重要区别。
+进程是具有一定独立功能的程序关于某个数据集合上的一次运行活动,进程是系统进行资源分配和调度的一个独立单位.
+线程是进程的一个实体,是CPU调度和分派的基本单位,它是比进程更小的能独立运行的基本单位.线程自己基本上不拥有系统资源,只拥有一点在运行中必不可少的资源(如程序计数器,一组寄存器和栈),但是它可与同属一个进程的其他的线程共享进程所拥有的全部资源.
+一个线程可以创建和撤销另一个线程;同一个进程中的多个线程之间可以并发执行.
+进程和线程的主要差别在于它们是不同的操作系统资源管理方式。进程有独立的地址空间，一个进程崩溃后，在保护模式下不会对其它进程产生影响，而线程只是一个进程中的不同执行路径。线程有自己的堆栈和局部变量，但线程之间没有单独的地址空间，一个线程死掉就等于整个进程死掉，所以多进程的程序要比多线程的程序健壮，但在进程切换时，耗费资源较大，效率要差一些。但对于一些要求同时进行并且又要共享某些变量的并发操作，只能用线程，不能用进程。
+线程被堵塞可能是由下述五方面的原因造成的：
+启动一个线程是调用start()方法，使线程就绪状态，以后可以被调度为运行状态，一个线程必须关联一些具体的执行代码，run()方法是该线程所关联的执行代码。
+Java 提供了三种创建线程的方法：
+多线程有两种实现方法，分别是继承Thread类与实现Runnable接口。
+Java 5以前实现多线程有两种实现方法：一种是继承Thread类；另一种是实现Runnable接口。两种方式都要通过重写run()方法来定义线程的行为，推荐使用后者，因为Java中的继承是单继承，一个类有一个父类，如果继承了Thread类就无法再继承其他类了，显然使用Runnable接口更为灵活。
+实现Runnable接口相比继承Thread类有如下优势：
+补充：Java 5以后创建线程还有第三种方式：实现Callable接口，该接口中的call方法可以在线程执行结束时产生一个返回值，代码如下所示：
+class MyTask implements Callable<Integer> {
+private int upperBounds;
+public MyTask(int upperBounds) {
+this.upperBounds = upperBounds;
+}
+@Override
+public Integer call() throws Exception {
+int sum = 0;
+for(int i = 1; i <= upperBounds; i++) {
+sum += i;
+}
+return sum;
+}
+}
+public class Test {
+public static void main(String[] args) throws Exception {
+List<Future<Integer>> list = new ArrayList<>();
+ExecutorService service = Executors.newFixedThreadPool(10);
+for(int i = 0; i < 10; i++) {
+list.add(service.submit(new MyTask((int) (Math.random() * 100))));
+}
+int sum = 0;
+for(Future<Integer> future : list) {
+while(!future.isDone()) ;
+sum += future.get();
+}
+System.out.println(sum);
+}
+}
+同步的实现方面有两种，分别是synchronized、wait与notify
+方法锁、对象锁、类锁
+同步：A线程要请求某个资源，但是此资源正在被B线程使用中，因为同步机制存在，A线程请求不到，怎么办，A线程只能等待下去
+异步：A线程要请求某个资源，但是此资源正在被B线程使用中，因为没有同步机制存在，A线程仍然请求的到，A线程无需等待
+在进行网络编程时，我们通常会看到同步、异步、阻塞、非阻塞四种调用方式以及他们的组合。
+其中同步方式、异步方式主要是由客户端（client）控制的，具体如下：
+同步（Sync）
+所谓同步，就是发出一个功能调用时，在没有得到结果之前，该调用就不返回或继续执行后续操作。
+异步（Async）
+异步与同步相对，当一个异步过程调用发出后，调用者在没有得到结果之前，就可以继续执行后续操作。当这个调用完成后，一般通过状态、通知和回调来通知调用者。对于异步调用，调用的返回并不受调用者控制。
+一个是用来让线程休息，一个是用来挂起线程
+wait()：则是指当前线程让自己暂时退让出同步资源锁，以便其他正在等待该资源的线程得到该资源进而运行，只有调用了notify()方法，之前调用wait()的线程才会解除wait状态，可以去参与竞争同步资源锁，进而得到执行
+sleep()方法是线程类（Thread）的静态方法，导致此线程暂停执行指定时间，将执行机会给其他线程，但是监控状态依然保持，到时后会自动恢复（线程回到就绪（ready）状态），因为调用sleep 不会释放对象锁。
+wait()是Object 类的方法，对此对象调用wait()方法导致本线程放弃对象锁(线程暂停执行)，进入等待此对象的等待锁定池，只有针对此对象发出notify 方法（或notifyAll）后本线程才进入对象锁定池准备获得对象锁进入就绪状态。
+在并发编程中，多线程同时并发访问的资源叫做临界资源，当多个线程同时访问对象并要求操作相同资源时，分割了原子操作就有可能出现数据的不一致或数据不完整的情况，为避免这种情况的发生，我们会采取同步机制，以确保在某一时刻，方法内只允许有一个线程。
+采用synchronized修饰符实现的同步机制叫做互斥锁机制，它所获得的锁叫做互斥锁。每个对象都有一个monitor(锁标记)，当线程拥有这个锁标记时才能访问这个资源，没有锁标记便进入锁池。任何一个对象系统都会为其创建一个互斥锁，这个锁是为了分配给线程的，防止打断原子操作。每个对象的锁只能分配给一个线程，因此叫做互斥锁。
+这里就使用同步机制获取互斥锁的情况，进行几点说明：
+public class A {
+/**
+* 静态方法
+*/
+public synchronized static void staticMethod(){}
+/**
+* 实例方法
+*/
+public synchronized void instanceMethod(){}
+public static void main(String[] args) {
+//A实例的创建过程
+Class c = Class.forName("A");
+A a1 = c.newInstance();
+A a2 = c.newInstance();
+A a3 = c.newInstance();
+}
+}
+如上代码所示，你看一看main方法里面A实例的创建过程，这个要先理解staticMethod这个静态方法，无法你实例化多少次，它都只是存在一个，就像Class c指向的对象，它在jvm中也只会存在一个，staticMethod方法锁住的是c指向的实例。
+instanceMethod这个实例方法，你创建多少个A实例，这些实例都存在各自的instanceMethod方法，这个方法前加synchronized关键词，会锁住该instanceMethod方法所在的实例。如a1的instanceMethod方法会锁住a1指向的实例，a2的instanceMethod会锁住a2指向的实例。
+由此得出结论，staticMethod与instanceMethod锁住的对象是不可能相同的，这就是两个方法不能同步的原因。
+加锁（synchronized同步）的功能不仅仅局限于互斥行为，同时还存在另外一个重要的方面：内存可见性。我们不仅希望防止某个线程正在使用对象状态而另一个线程在同时修改该状态，而且还希望确保当一个线程修改了对象状态后，其他线程能够看到该变化。而线程的同步恰恰也能够实现这一点。
+内置锁可以用于确保某个线程以一种可预测的方式来查看另一个线程的执行结果。为了确保所有的线程都能看到共享变量的最新值，可以在所有执行读操作或写操作的线程上加上同一把锁。下图示例了同步的可见性保证。
+当线程A执行某个同步代码块时，线程B随后进入由同一个锁保护的同步代码块，这种情况下可以保证，当锁被释放前，A看到的所有变量值（锁释放前，A看到的变量包括y和x）在B获得同一个锁后同样可以由B看到。换句话说，当线程B执行由锁保护的同步代码块时，可以看到线程A之前在同一个锁保护的同步代码块中的所有操作结果。如果在线程A unlock M之后，线程B才进入lock M，那么线程B都可以看到线程A unlock M之前的操作，可以得到i=1，j=1。如果在线程B unlock M之后，线程A才进入lock M，那么线程B就不一定能看到线程A中的操作，因此j的值就不一定是1。
+现在考虑如下代码：
+public class  MutableInteger
+{
+private int value;
+public int get(){
+return value;
+}
+public void set(int value){
+this.value = value;
+}
+}
+以上代码中，get和set方法都在没有同步的情况下访问value。如果value被多个线程共享，假如某个线程调用了set，那么另一个正在调用get的线程可能会看到更新后的value值，也可能看不到。
+通过对set和get方法进行同步，可以使MutableInteger成为一个线程安全的类，如下：
+public class  SynchronizedInteger
+{
+private int value;
+public synchronized int get(){
+return value;
+}
+public synchronized void set(int value){
+this.value = value;
+}
+}
+对set和get方法进行了同步，加上了同一把对象锁，这样get方法可以看到set方法中value值的变化，从而每次通过get方法取得的value的值都是最新的value值。
+面Java基础的时候遇上了这个问题，说如果只有一个i++;的时候，作为修饰变量的时候，变量自加会出现加到一半发生线程调度。再看看当时蒙对了。
+可以保证在一个线程的工作内存中修改了该变量的值，该变量的值立即能回显到主内存中，从而保证所有的线程看到这个变量的值是一致的。但是有个前提，因为它
+不具有操作的原子性，也就是它不适合在对该变量的写操作依赖于变量本身自己。就比如i++、i+=1;这种。但是可以改为num=i+1;如果i是一个  类型，那么num就是安全的，总之就是不能作用于自身。
+块中，就是线程安全的。
+既然都说了线程安全，就多了解几个：
+高一些。
+。
+详细分析见 。
+再补一个，才学到的。利用方法，如果是一个类的多个对象想共用对象内部的一个变量，而又不想这个变量static，可以使用浅复制方式。(查看设计模式原型模式)
+当且仅当满足以下所有条件时，才应该使用volatile变量：
+总结：在需要同步的时候，第一选择应该是synchronized关键字，这是最安全的方式，尝试其他任何方式都是有风险的。尤其在、jdK1.5之后，对synchronized同步机制做了很多优化，如：自适应的自旋锁、锁粗化、锁消除、轻量级锁等，使得它的性能明显有了很大的提升。
+Java中有两类线程：User Thread(用户线程)、Daemon Thread(守护线程)
+用户线程即运行在前台的线程，而守护线程是运行在后台的线程。 守护线程作用是为其他前台线程的运行提供便利服务，而且仅在普通、非守护线程仍然运行时才需要，比如垃圾回收线程就是一个守护线程。当VM检测仅剩一个守护线程，而用户线程都已经退出运行时，VM就会退出，因为如果没有了守护者，也就没有继续运行程序的必要了。如果有非守护线程仍然活着，VM就不会退出。
+守护线程并非只有虚拟机内部提供，用户在编写程序时也可以自己设置守护线程。用户可以用Thread的setDaemon(true)方法设置当前线程为守护线程。
+虽然守护线程可能非常有用，但必须小心确保其它所有非守护线程消亡时，不会由于它的终止而产生任何危害。因为你不可能知道在所有的用户线程退出运行前，守护线程是否已经完成了预期的服务任务。一旦所有的用户线程退出了，虚拟机也就退出运行了。因此，不要再守护线程中执行业务逻辑操作(比如对数据的读写等)。
+还有几点：
+当线程需要同时持有多个锁时，有可能产生死锁。考虑如下情形：
+线程A当前持有互斥所锁lock1，线程B当前持有互斥锁lock2。接下来，当线程A仍然持有lock1时，它试图获取lock2，因为线程B正持有lock2，因此线程A会阻塞等待线程B对lock2的释放。如果此时线程B在持有lock2的时候，也在试图获取lock1，因为线程A正持有lock1，因此线程B会阻塞等待A对lock1的释放。二者都在等待对方所持有锁的释放，而二者却又都没释放自己所持有的锁，这时二者便会一直阻塞下去。这种情形称为死锁。
+下面给出一个两个线程间产生死锁的示例，如下：
+public class Deadlock {
+private String objID;
+public Deadlock(String id) {
+objID = id;
+}
+public synchronized void checkOther(Deadlock other) {
+print("entering checkOther()");
+try { Thread.sleep(2000); }
+catch ( InterruptedException x ) { }
+print("in checkOther() - about to " + "invoke 'other.action()'");
+//调用other对象的action方法，由于该方法是同步方法，因此会试图获取other对象的对象锁
+other.action();
+print("leaving checkOther()");
+}
+public synchronized void action() {
+print("entering action()");
+try { Thread.sleep(500); }
+catch ( InterruptedException x ) { }
+print("leaving action()");
+}
+public void print(String msg) {
+threadPrint("objID=" + objID + " - " + msg);
+}
+public static void threadPrint(String msg) {
+String threadName = Thread.currentThread().getName();
+System.out.println(threadName + ": " + msg);
+}
+public static void main(String[] args) {
+final Deadlock obj1 = new Deadlock("obj1");
+final Deadlock obj2 = new Deadlock("obj2");
+Runnable runA = new Runnable() {
+public void run() {
+obj1.checkOther(obj2);
+}
+};
+Thread threadA = new Thread(runA, "threadA");
+threadA.start();
+try { Thread.sleep(200); }
+catch ( InterruptedException x ) { }
+Runnable runB = new Runnable() {
+public void run() {
+obj2.checkOther(obj1);
+}
+};
+Thread threadB = new Thread(runB, "threadB");
+threadB.start();
+try { Thread.sleep(5000); }
+catch ( InterruptedException x ) { }
+threadPrint("finished sleeping");
+threadPrint("about to interrupt() threadA");
+threadA.interrupt();
+try { Thread.sleep(1000); }
+catch ( InterruptedException x ) { }
+threadPrint("about to interrupt() threadB");
+threadB.interrupt();
+try { Thread.sleep(1000); }
+catch ( InterruptedException x ) { }
+threadPrint("did that break the deadlock?");
+}
+}
+运行结果：
+threadA: objID=obj1 - entering checkOther()
+threadB: objID=obj2 - entering checkOther()
+threadA: objID=obj1 - in checkOther() - about to invoke 'other.action()'
+threadB: objID=obj2 - in checkOther() - about to invoke 'other.action()'
+main: finished sleeping
+main: about to interrupt() threadA
+main: about to interrupt() threadB
+main: did that break the deadlock?
+从结果中可以看出，在执行到other.action（）时，由于两个线程都在试图获取对方的锁，但对方都没有释放自己的锁，因而便产生了死锁，在主线程中试图中断两个线程，但都无果。
+大部分代码并不容易产生死锁，死锁可能在代码中隐藏相当长的时间，等待不常见的条件地发生，但即使是很小的概率，一旦发生，便可能造成毁灭性的破坏。避免死锁是一件困难的事，遵循以下原则有助于规避死锁：
+每个Java对象都可以用做一个实现同步的锁，这些锁被称为内置锁或监视器锁。线程在进入同步代码块之前会自动获取锁，并且在退出同步代码块时会自动释放锁。获得内置锁的唯一途径就是进入由这个锁保护的同步代码块或方法。
+当某个线程请求一个由其他线程持有的锁时，发出请求的线程就会阻塞。然而，由于内置锁是可重入的，因此如果摸个线程试图获得一个已经由它自己持有的锁，那么这个请求就会成功。“重入”意味着获取锁的操作的粒度是“线程”，而不是调用。重入的一种实现方法是，为每个锁关联一个获取计数值和一个所有者线程。当计数值为0时，这个锁就被认为是没有被任何线程所持有，当线程请求一个未被持有的锁时，JVM将记下锁的持有者，并且将获取计数值置为1，如果同一个线程再次获取这个锁，计数值将递增，而当线程退出同步代码块时，计数器会相应地递减。当计数值为0时，这个锁将被释放。
+重入进一步提升了加锁行为的封装性，因此简化了面向对象并发代码的开发。分析如下程序：
+public class Father
+{
+public synchronized void doSomething(){
+......
+}
+}
+public class Child extends Father
+{
+public synchronized void doSomething(){
+......
+super.doSomething();
+}
+}
+子类覆写了父类的同步方法，然后调用父类中的方法，此时如果没有可重入的锁，那么这段代码件产生死锁。
+由于Fither和Child中的doSomething方法都是synchronized方法，因此每个doSomething方法在执行前都会获取Child对象实例上的锁。如果内置锁不是可重入的，那么在调用super.doSomething时将无法获得该Child对象上的互斥锁，因为这个锁已经被持有，从而线程会永远阻塞下去，一直在等待一个永远也无法获取的锁。重入则避免了这种死锁情况的发生。
+同一个线程在调用本类中其他synchronized方法/块或父类中的synchronized方法/块时，都不会阻碍该线程地执行，因为互斥锁时可重入的。
+在Java中，可以通过配合调用Object对象的wait（）方法和notify（）方法或notifyAll（）方法来实现线程间的通信。在线程中调用wait（）方法，将阻塞等待其他线程的通知（其他线程调用notify（）方法或notifyAll（）方法），在线程中调用notify（）方法或notifyAll（）方法，将通知其他线程从wait（）方法处返回。
+Object是所有类的超类，它有5个方法组成了等待/通知机制的核心：notify（）、notifyAll（）、wait（）、wait（long）和wait（long，int）。在Java中，所有的类都从Object继承而来，因此，所有的类都拥有这些共有方法可供使用。而且，由于他们都被声明为final，因此在子类中不能覆写任何一个方法。
+这里详细说明一下各个方法在使用中需要注意的几点：
+1、wait（）
+public final void wait()  throws InterruptedException,IllegalMonitorStateException
+该方法用来将当前线程置入休眠状态，直到接到通知或被中断为止。在调用wait（）之前，线程必须要获得该对象的对象级别锁，即只能在同步方法或同步块中调用wait（）方法。进入wait（）方法后，当前线程释放锁。在从wait（）返回前，线程与其他线程竞争重新获得锁。如果调用wait（）时，没有持有适当的锁，则抛出IllegalMonitorStateException，它是RuntimeException的一个子类，因此，不需要try-catch结构。
+2、notify（）
+public final native void notify() throws IllegalMonitorStateException
+该方法也要在同步方法或同步块中调用，即在调用前，线程也必须要获得该对象的对象级别锁，的如果调用notify（）时没有持有适当的锁，也会抛出IllegalMonitorStateException。
+该方法用来通知那些可能等待该对象的对象锁的其他线程。如果有多个线程等待，则线程规划器任意挑选出其中一个wait（）状态的线程来发出通知，并使它等待获取该对象的对象锁（notify后，当前线程不会马上释放该对象锁，wait所在的线程并不能马上获取该对象锁，要等到程序退出synchronized代码块后，当前线程才会释放锁，wait所在的线程也才可以获取该对象锁），但不惊动其他同样在等待被该对象notify的线程们。当第一个获得了该对象锁的wait线程运行完毕以后，它会释放掉该对象锁，此时如果该对象没有再次使用notify语句，则即便该对象已经空闲，其他wait状态等待的线程由于没有得到该对象的通知，会继续阻塞在wait状态，直到这个对象发出一个notify或notifyAll。这里需要注意：它们等待的是被notify或notifyAll，而不是锁。这与下面的notifyAll（）方法执行后的情况不同。
+3、notifyAll（）
+public final native void notifyAll() throws IllegalMonitorStateException
+该方法与notify（）方法的工作方式相同，重要的一点差异是：
+notifyAll使所有原来在该对象上wait的线程统统退出wait的状态（即全部被唤醒，不再等待notify或notifyAll，但由于此时还没有获取到该对象锁，因此还不能继续往下执行），变成等待获取该对象上的锁，一旦该对象锁被释放（notifyAll线程退出调用了notifyAll的synchronized代码块的时候），他们就会去竞争。如果其中一个线程获得了该对象锁，它就会继续往下执行，在它退出synchronized代码块，释放锁后，其他的已经被唤醒的线程将会继续竞争获取该锁，一直进行下去，直到所有被唤醒的线程都执行完毕。
+4、wait（long）和wait（long,int）
+显然，这两个方法是设置等待超时时间的，后者在超值时间上加上ns，精度也难以达到，因此，该方法很少使用。对于前者，如果在等待线程接到通知或被中断之前，已经超过了指定的毫秒数，则它通过竞争重新获得锁，并从wait（long）返回。另外，需要知道，如果设置了超时时间，当wait（）返回时，我们不能确定它是因为接到了通知还是因为超时而返回的，因为wait（）方法不会返回任何相关的信息。但一般可以通过设置标志位来判断，在notify之前改变标志位的值，在wait（）方法后读取该标志位的值来判断，当然为了保证notify不被遗漏，我们还需要另外一个标志位来循环判断是否调用wait（）方法。
+深入理解：
+参考：
+Error是Throwable的子类，用于标记严重错误。合理的应用程序不应该去try/catch这种错误。绝大多数的错误都是非正常的，就根本不该出现的。
+Exception 是Throwable的一种形式的子类，用于指示一种合理的程序想去catch的条件。即它仅仅是一种程序运行条件，而非严重错误，并且鼓励用户程序去catch它。
+checked exceptions: 通常是从一个可以恢复的程序中抛出来的，并且最好能够从这种异常中使用程序恢复。比如FileNotFoundException, ParseException等。
+unchecked exceptions: 通常是如果一切正常的话本不该发生的异常，但是的确发生了。比如ArrayIndexOutOfBoundException, ClassCastException等。从语言本身的角度讲，程序不该去catch这类异常，虽然能够从诸如RuntimeException这样的异常中catch并恢复，但是并不鼓励终端程序员这么做，因为完全没要必要。因为这类错误本身就是bug，应该被修复，出现此类错误时程序就应该立即停止执行。 因此，面对Errors和unchecked exceptions应该让程序自动终止执行，程序员不该做诸如try/catch这样的事情，而是应该查明原因，修改代码逻辑。
+JAVA语言如何进行异常处理，关键字：throws,throw,try,catch,finally分别代表什么意义？在try块中可以抛出异常吗？
+Java通过面向对象的方法进行异常处理，把各种不同的异常进行分类，并提供了良好的接口。在Java中，每个异常都是一个对象，它是Throwable类或其它子类的实例。当一个方法出现异常后便抛出一个异常对象，该对象中包含有异常信息，调用这个对象的方法可以捕获到这个异常并进行处理。Java的异常处理是通过5个关键词来实现的：try、catch、throw、throws和finally。一般情况下是用try来执行一段程序，如果出现异常，系统会抛出（throws）一个异常，这时候你可以通过它的类型来捕捉（catch）它，或最后（finally）由缺省处理器来处理。用try来指定一块预防所有“异常”的程序。紧跟在try程序后面，应包含一个catch子句来指定你想要捕捉的“异常”的类型。throw语句用来明确地抛出一个“异常”。throws用来标明一个成员函数可能抛出的各种“异常”。Finally为确保一段代码不管发生什么“异常”都被执行一段代码。可以在一个成员函数调用的外面写一个try语句，在这个成员函数内部写另一个try语句保护其他代码。每当遇到一个try语句，“异常”的框架就放到堆栈上面，直到所有的try语句都完成。如果下一级的try语句没有对某种“异常”进行处理，堆栈就会展开，直到遇到有处理这种“异常”的try语句。
+任何执行try 或者catch中的return语句之前，都会先执行finally语句，如果finally存在的话。
+如果finally中有return语句，那么程序就return了，所以finally中的return是一定会被return的。
+在try语句中，在执行return语句时，要返回的结果已经准备好了，就在此时，程序转到finally执行了。在转去之前，try中先把要返回的结果存放到不同于x的局部变量中去，执行完finally之后，在从中取出返回结果，因此，即使finally中对变量x进行了改变，但是不会影响返回结果。
+ObjectInputStream
+ObjectOutputStream
+序列化就是一种用来处理对象流的机制，所谓对象流也就是将对象的内容进行流化。可以对流化后的对象进行读写操作，也可将流化后的对象传输于网络之间。序列化是为了解决在对对象流进行读写操作时所引发的问题。
+序列化的实现：将需要被序列化的类实现Serializable接口，该接口没有需要实现的方法，implements Serializable只是为了标注该对象是可被序列化的，然后使用一个输出流(如：FileOutputStream)来构造一个ObjectOutputStream(对象流)对象，接着，使用ObjectOutputStream对象的writeObject(Object obj)方法就可以将参数为obj的对象写出(即保存其状态)，要恢复的话则用输入流。
+java反射机制是在运行状态中，对于任意一个类， 都能够知道这个类的所有属性和方法；对于任意一个对象， 都能够调用它的任意一个方法和属性；这种动态获取的信息以及动态调用对象的方法的功能称为java语言的反射机制。
+主要作用有三：
+用处如下：
+优点：
+使用泛型类型可以最大限度地重用代码、保护类型的安全以及提高性能。泛型最常见的用途是创建集合类。
+缺点：
+在性能上不如数组快。
+能，但是利用类都继承自Object，所以使用是每次调用里面的函数都要通过强制转换还原回原来的类，这样既不安全，运行速度也慢。
+POST把提交的数据则放置在是HTTP包的包体中。
+首先是"GET方式提交的数据最多只能是1024字节"，因为GET是通过URL提交数据，那么GET可提交的数据量就跟URL的长度有直接关系了。而实际上，URL不存在参数上限的问题，HTTP协议规范没有对URL长度进行限制。这个限制是特定的浏览器及服务器对它的限制。IE对URL长度的限制是2083字节(2K+35)。对于其他浏览器，如Netscape、FireFox等，理论上没有长度限制，其限制取决于操作系统的支持。
+注意这是限制是整个URL长度，而不仅仅是你的参数值数据长度。
+GET - 从指定的服务器中获取数据
+POST - 提交数据给指定的服务器处理
+GET方法：
+使用GET方法时，查询字符串（键值对）被附加在URL地址后面一起发送到服务器：
+/test/demo_form.jsp?name1=value1&name2=value2
+特点：
+GET请求能够被缓存
+GET请求会保存在浏览器的浏览记录中
+以GET请求的URL能够保存为浏览器书签
+GET请求有长度限制
+GET请求主要用以获取数据
+POST方法：
+使用POST方法时，查询字符串在POST信息中单独存在，和HTTP请求一起发送到服务器：
+POST /test/demo_form.jsp HTTP/1.1
+Host: w3schools.com
+name1=value1&name2=value2
+特点：
+POST请求不能被缓存下来
+POST请求不会保存在浏览器浏览记录中
+以POST请求的URL无法保存为浏览器书签
+POST请求没有长度限制
+TCP：面向连接、传输可靠(保证数据正确性,保证数据顺序)、用于传输大量数据(流模式)、速度慢，建立连接需要开销较多(时间，系统资源)。
+UDP：面向非连接、传输不可靠、用于传输少量数据(数据包模式)、速度快。
+TCP是Tranfer Control Protocol的 简称，是一种面向连接的保证可靠传输的协议。通过TCP协议传输，得到的是一个顺序的无差错的数据流。发送方和接收方的成对的两个socket之间必须建 立连接，以便在TCP协议的基础上进行通信，当一个socket（通常都是server socket）等待建立连接时，另一个socket可以要求进行连接，一旦这两个socket连接起来，它们就可以进行双向数据传输，双方都可以进行发送 或接收操作。
+UDP是User Datagram Protocol的简称，是一种无连接的协议，每个数据报都是一个独立的信息，包括完整的源地址或目的地址，它在网络上以任何可能的路径传往目的地，因此能否到达目的地，到达目的地的时间以及内容的正确性都是不能被保证的。
+比较：
+UDP：
+1，每个数据报中都给出了完整的地址信息，因此无需要建立发送方和接收方的连接。
+2，UDP传输数据时是有大小限制的，每个被传输的数据报必须限定在64KB之内。
+3，UDP是一个不可靠的协议，发送方所发送的数据报并不一定以相同的次序到达接收方
+TCP：
+1，面向连接的协议，在socket之间进行数据传输之前必然要建立连接，所以在TCP中需要连接时间。
+2，TCP传输数据大小限制，一旦连接建立起来，双方的socket就可以按统一的格式传输大的数据。
+3，TCP是一个可靠的协议，它确保接收方完全正确地获取发送方所发送的全部数据。
+应用：
+1，TCP在网络通信上有极强的生命力，例如远程连接（Telnet）和文件传输（FTP）都需要不定长度的数据被可靠地传输。但是可靠的传输是要付出代价的，对数据内容正确性的检验必然占用计算机的处理时间和网络的带宽，因此TCP传输的效率不如UDP高。
+2，UDP操作简单，而且仅需要较少的监护，因此通常用于局域网高可靠性的分散系统中client/server应用程序。例如视频会议系统，并不要求音频视频数据绝对的正确，只要保证连贯性就可以了，这种情况下显然使用UDP会更合理一些。
+的话，虽然应用程序和TCP的交互是一次一个数据块（大小不等），但TCP把应用程序看成是一连串的无结构的字节流。TCP有一个缓冲，当应用程序传送的数据块太长，TCP就可以把它划分短一些再传送。如果应用程序一次只发送一个字节，TCP也可以等待积累有足够多的字节后再构成报文段发送出去。
+确认应答信号ACK = 收到的SEQ + 1。连接建立中，同步信号SYN始终为1。连接建立后，同步信号SYN=0。
+TCP协议使用SEQ和ACK机制保证了顺序性TCP的每个报文都是有序号的。确认应答信号ACK=收到的SEQ+1
+使用“ping”命令来测试两台主机之间TCP/IP通信是否正常，其实“ping”命令的原理就是向对方主机发送UDP数据包，然后对方主机确认收到数据包，如果数据包是否到达的消息及时反馈回来，那么网络就是通的。
+仿造TCP的做法，每发一个UDP包，都在里面加一个SEQ序号，接收方收到包后，将SEQ序号回复给发送方。如果发送方在指定时间以内没有收到回应，说明丢包了。
+当对网络通讯质量有要求的时候，比如：整个数据要准确无误的传递给对方，这往往用于一些要求可靠的应用，比如HTTP、HTTPS、FTP等传输文件的协议，POP、SMTP等邮件传输的协议。在日常生活中，常见使用TCP协议的应用如下：浏览器，用的HTTPFlashFXP，用的FTPOutlook，用的POP、SMTPPutty，用的Telnet、SSHQQ文件传输
+当对网络通讯质量要求不高的时候，要求网络通讯速度能尽量的快，这时就可以使用UDP。比如，日常生活中，常见使用UDP协议的应用如下：QQ语音QQ视频TFTP
+客户端分多次发送数据给服务器，若服务器的缓冲区够大，那么服务器端会在客户端发送完之后一次性接收过来，所以是无边界的；
+客户端每发送一次，服务器端就会接收一次，也就是说发送多少次就会接收多少次，因此是有边界的。
+Server端Listen(监听)某个端口是否有连接请求，Client端向Server 端发出Connect(连接)请求，Server端向Client端发回Accept（接受）消息。一个连接就建立起来了。Server端和Client 端都可以通过Send，Write等方法与对方通信。
+对于一个功能齐全的Socket，都要包含以下基本结构，其工作过程包含以下四个基本的步骤：
+（1） 创建Socket；
+（2） 打开连接到Socket的输入/出流；
+（3） 按照一定的协议对Socket进行读/写操作；
+（4） 关闭Socket.（在实际应用中，并未使用到显示的close，虽然很多文章都推荐如此，不过在我的程序中，可能因为程序本身比较简单，要求不高，所以并未造成什么影响。）
+1.json-lib
+json-lib最开始的也是应用最广泛的json解析工具，json-lib 不好的地方确实是依赖于很多第三方包，包括commons-beanutils.jar，commons-collections-3.2.jar，commons-lang-2.6.jar，commons-logging-1.1.1.jar，ezmorph-1.0.6.jar，
+对于复杂类型的转换，json-lib对于json转换成bean还有缺陷，比如一个类里面会出现另一个类的list或者map集合，json-lib从json到bean的转换就会出现问题。
+json-lib在功能和性能上面都不能满足现在互联网化的需求。
+2.开源的Jackson
+相比json-lib框架，Jackson所依赖的jar包较少，简单易用并且性能也要相对高些。而且Jackson社区相对比较活跃，更新速度也比较快。
+Jackson对于复杂类型的json转换bean会出现问题，一些集合Map，List的转换出现问题。Jackson对于复杂类型的bean转换Json，转换的json格式不是标准的Json格式
+3.Google的Gson
+Gson是目前功能最全的Json解析神器，Gson当初是为因应Google公司内部需求而由Google自行研发而来，但自从在2008年五月公开发布第一版后已被许多公司或用户应用。
+Gson的应用主要为toJson与fromJson两个转换函数，无依赖，不需要例外额外的jar，能够直接跑在JDK上。
+而在使用这种对象转换之前需先创建好对象的类型以及其成员才能成功的将JSON字符串成功转换成相对应的对象。类里面只要有get和set方法，Gson完全可以将复杂类型的json到bean或bean到json的转换，是JSON解析的神器。
+Gson在功能上面无可挑剔，但是性能上面比FastJson有所差距。
+4.阿里巴巴的FastJson
+Fastjson是一个Java语言编写的高性能的JSON处理器,由阿里巴巴公司开发。无依赖，不需要例外额外的jar，能够直接跑在JDK上。
+FastJson在复杂类型的Bean转换Json上会出现一些问题，可能会出现引用的类型，导致Json转换出错，需要制定引用。
+FastJson采用独创的算法，将parse的速度提升到极致，超过所有json库。
+参考：
+参考：
+参考：

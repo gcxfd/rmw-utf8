@@ -1,0 +1,219 @@
+java源码 - ReentrantLock图解加锁过程
+用图形化的方式加深加锁和解锁过程的解释性。
+这时它会调用下面的方法，通过CAS的操作，将当前AQS的state由0变成1，证明当前thread1已经获取到锁，并且将AQS的exclusiveOwnerThread设置成thread1，证明当前持有锁的线程是thread1。：
+final void lock() {
+if (compareAndSetState(0, 1))
+setExclusiveOwnerThread(Thread.currentThread());
+else
+acquire(1);
+}
+NonFairSync.lock方法的第一个分支是通过CAS操作获取锁，很明显，这一步肯定会失败，因为此时thread1还没有释放锁。那么thread2将会走NonFairSync.lock方法的第二个分支，进行acquire(1)操作。
+acquire(1)其实是AQS的方法，acquire(1)方法内部首先调用tryAcquire方法，ReentrantLock.NonFairLock重写了tryAcquire方法，并且ReentrantLock.NonFairLock的tryAcquire方法又调用了ReentrantLock.Sync的nonfairTryAcquire方法.
+nonfairTryAcquire方法如下：
+final boolean nonfairTryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();
+if (c == 0) {
+if (compareAndSetState(0, acquires)) {
+setExclusiveOwnerThread(current);
+return true;
+}
+}
+else if (current == getExclusiveOwnerThread()) {
+int nextc = c + acquires;
+if (nextc < 0) // overflow
+throw new Error("Maximum lock count exceeded");
+setState(nextc);
+return true;
+}
+return false;
+}
+这个方法的执行逻辑如下：
+1. 获取当前将要去获取锁的线程，在此时的情况下，也就是我们的thread2线程。
+2. 获取当前AQS的state的值。如果此时state的值是0，那么我们就通过CAS操作获取锁，然后设置AQS的exclusiveOwnerThread为thread2。很明显，在当前的这个执行情况下，state的值是1不是0，因为我们的thread1还没有释放锁。
+3. 如果当前将要去获取锁的线程等于此时AQS的exclusiveOwnerThread的线程，则此时将state的值加1，很明显这是重入锁的实现方式。在此时的运行状态下，将要去获取锁的线程不是thread1，也就是说这一步不成立。
+4. 以上操作都不成立的话，我们直接返回false。
+既然返回了false，那么之后就会调用addWaiter方法，这个方法负责把当前无法获取锁的线程包装为一个Node添加到队尾。通过下面的代码片段我们就知道调用逻辑：
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+我们进入到addWaiter方法内部去看：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);
+return node;
+}
+很明显在addWaiter内部：
+第一步：将当前将要去获取锁的线程也就是thread2和独占模式封装为一个node对象。并且我们也知道在当前的执行环境下，线程阻塞队列是空的，因为thread1获取了锁，thread2也是刚刚来请求锁，所以线程阻塞队列里面是空的。很明显，这个时候队列的尾部tail节点也是null，那么将直接进入到enq方法。
+第二步：我们首先看下enq方法的内部实现。首先内部是一个自悬循环。
+private Node enq(final Node node) {
+for (;;) {
+Node t = tail;
+if (t == null) { // Must initialize
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+t为null，随后我们new出了一个空的node节点，并且通过CAS操作设置了线程的阻塞队列的head节点就是我们刚才new出来的那个空的node节点，其实这是一个“假节点”，那么什么是“假节点”呢？那就是节点中不包含线程。设置完head节点后，同时又将head节点赋值给尾部tail节点，到此第一次循环结束。此时的节点就是如下：
+现在判断尾部tail已经不是null了，那么就走第二个分支了。将尾部tail节点赋值给我们传递进来的节点Node的前驱节点，此时的结构如下：
+然后再通过CAS的操作，将我们传递进来的节点node设置成尾部tail节点，并且将我们的node节点赋值给原来的老的那个尾部节点的后继节点，此时的结构如下：
+这个时候代码中使用了return关键字，也就是证明我们经过了2次循环跳出了这个自悬循环体系。
+现在我们看下acquireQueued方法内部，我们也可以清楚的看到，这个方法的内部也是一个自悬循环。
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+第一次循环：获取我们传入node的前驱节点，判断是否是head节点，现在我们的状态是：
+很明显满足当前node节点的前驱节点是head节点，那么现在我们就要去调用tryAcquire方法，也就是NonfairSync类的tryAcquire方法，而这个方法又调用了ReentrantLock.Sync.nonfairTryAcquire方法。
+很明显此时thread2获取锁是失败的，直接返回false。按照调用流程，现在进入了当前节点的前驱节点的shouldParkAfterFailedAcquire方法，检查当前节点的前驱节点的waitstatus。shouldParkAfterFailedAcquire方法内部如下：
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+return true;
+if (ws > 0) {
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+很明显，我们在这里的情况是第3种情况，并且这个方法运行后返回false。此时的结构如下，主要是head节点的waitStatus由0变成了-1。
+第二次循环：获取我们传入node的前驱节点，判断是否是head节点，现在我们的状态是：
+很明显满足当前node节点的前驱节点是head节点，那么现在我们就要去调用tryAcquire方法，也就是NonfairSync类的tryAcquire方法，而这个方法又调用了ReentrantLock.Sync.nonfairTryAcquire方法。
+很明显此时thread2获取锁是失败的，直接返回false。按照调用流程，现在进入了当前节点的前驱节点的shouldParkAfterFailedAcquire方法，检查当前节点的前驱节点的waitstatus。此时waitstatus为-1，这个方法返回true。
+shouldParkAfterFailedAcquire返回true后，就会调用parkAndCheckInterrupt方法，直接将当前线程thread2阻塞。
+仔细看这个方法acquireQueued方法，是无限循环，感觉如果p == head && tryAcquire(arg)条件不满足循环将永远无法结束，在这里，当然不会出现死循环。因为parkAndCheckInterrupt会把当前线程阻塞。分析到这里，我们的thread2线程已经被阻塞了，这个线程不会再继续执行下去了。
+thread3首先调用lock方法获取锁，首先去抢占锁，因为我们知道thread1还没有释放锁，这个时候thread3肯定抢占失败，于是又调用了acquire方法，接着又失败。接着会去调用addWaiter方法，将当前线程thread3封装成node加入到线程阻塞队列的尾部。现在的结构如下：
+addWaiter如下：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);
+return node;
+}
+第一步：将当前将要去获取锁的线程也就是thread3和独占模式封装为一个node对象。并且我们也知道在当前的执行环境下，线程阻塞队列不是空的，因为thread2获取了锁，thread2已经加入了队列。
+很明显，这个时候队列的尾部tail节点也不是null，那么将直接进入到if分支。将尾部tail节点赋值给我们传入的node节点的前驱节点。如下：
+第二步：通过CAS将我们传递进来的node节点设置成tail节点，并且将新tail节点设置成老tail节点的后继节点。
+到此，addWaiter方法执行完毕，接着执行acquireQueued方法。这是一个自循环方法。
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+第一次循环：获取我们传入node的前驱节点，判断是否是head节点，现在我们的状态是：
+我们传入node的前驱节点不是head节点，那么直接走第二个if分支，调用shouldParkAfterFailedAcquire方法。
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+return true;
+if (ws > 0) {
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+很明显，我们在这里的情况是第3种情况，并且这个方法运行后返回false。
+此时的结构如下，主要是t节点的waitStatus由0变成了-1。
+第二次循环：获取我们传入node的前驱节点，判断是否是head节点，现在我们的状态是：
+很明显我们传入node的前驱节点不是head节点，那么直接进入shouldParkAfterFailedAcquire方法。
+1. 如果前驱节点的waitStatus为-1，也就是SIGNAL，就返回true。
+2. 如果当前节点的前驱节点的waitstatus大于0，也就是说被CANCEL掉了，这个时候我们会除掉这个节点。
+3. 如果都不是以上的情况，就通过CAS操作将这个前驱节点设置成SIGHNAL。
+很明显，我们在这里的情况是第1种情况，并且这个方法运行后返回true。
+然后就会调用parkAndCheckInterrupt方法，直接将当前线程thread3阻塞。现在thread2和thread3都已经被阻塞。
+现在thread1要开始释放锁了。调用unlock方法，unlock方法又调用了内部的release方法:
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+如果(state-1)等于0，我们就将AQS的ExclusiveOwnerThread设置为null。
+如果上述操作成功了，也就是tryRelase方法返回了true，那么就会判断当前队列中的head节点，当前结构如下：
+如果head节点不为null，并且head节点的waitStatus不为0, 我们就调用unparkSuccessor方法去唤醒head节点的后继节点。
+private void unparkSuccessor(Node node) {
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+Node s = node.next;
+if (s == null || s.waitStatus > 0) {
+s = null;
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+if (s != null)
+LockSupport.unpark(s.thread);
+}
+第一步：获取head节点的waitStatus，如果小于0，就通过CAS操作将head节点的waitStatus修改为0，现在是：
+第二步：寻找head节点的下一个节点，如果这个节点的waitStatus小于0，就唤醒这个节点，否则遍历下去，找到第一个waitStatus<=0的节点，并唤醒。现在thread2线程被唤醒了，我们知道刚才thread2在acquireQueued被中断，现在继续执行，又进入了for循环，当前节点的前驱节点是head并且调用tryAquire方法获得锁并且成功。那么设置当前Node为head节点，将里面的thead和prev设置为null。
+调用完毕后，acquireQueued返回false。并且现在thread2自由了。到此，已经全部分析完毕。

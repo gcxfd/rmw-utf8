@@ -1,0 +1,54 @@
+6_内联函数分析
+关键词：内联函数
+const int A = 3 <--> #define A 3
+问题：C++中是否有解决方案代替宏代码片段呢？
+内联函数
+inline int func(int a, int b)
+{
+return a < b ? a : b;
+}
+#include <stdio.h>
+#define LOG_INT(i) printf("%s = %d\n", #i, i)
+int func(int a, int b)
+{
+return a < b ? a : b;
+}
+int main()
+{
+int a = 1;
+int b = 3;
+int c = 0;
+c = func(++a, b);
+LOG_INT(a);
+LOG_INT(b);
+LOG_INT(c);
+return 0;
+}
+输出结果：
+a = 2
+b = 3
+c = 2
+g++:__attribute__((always_inline))
+MSVC:__forceinline
+#include <stdio.h>
+__attribute__((always_inline))
+int add_inline(int n);
+int main(int argc, char* argv[])
+{
+int r = add_inline(10);
+printf("r = %d\n", r);
+return 0;
+}
+inline int add_inline(int n)
+{
+int ret = 0;
+for(int i=0; i<n; i++)
+{
+ret += i;
+}
+return ret;
+}
+输出结果：
+r = 45
+声明：此文章仅是本人在学习
+实验环境：gcc version 4.8.4 (Ubuntu 4.8.4-2ubuntu1~14.04.3)

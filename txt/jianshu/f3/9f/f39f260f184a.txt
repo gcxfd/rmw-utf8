@@ -1,0 +1,230 @@
+Java并发编程：synchronized、Lock、ReentrantLock以及ReadWriteLock的那些事儿
+多线程开发中，同步控制是必不可少的手段。而同步的实现需要用到锁，Java中提供了两种基本的锁，分别是synchronized 和 Lock。两种锁都非常常用，但也各有利弊，下面开始学习。
+synchronized 是Java的关键字，是应用最为广泛的同步工具之一。当它用来修饰一个方法或者一个代码块的时候，能够保证在同一时刻最多只有一个线程执行该段代码，同时，值得说明的是，它是在软件层面依赖
+synchronized 的用法很简单，直接用其修饰代码块即可，一般可将其用于修饰方法和代码块，根据修饰地方的不同还有不同的作用域，下面一一介绍。
+synchronized 修饰方法分为两种情况：
+顾名思义就是修饰类中的实例方法，并且默认是当前对象作为锁的对象，而一个对象只有一把锁，所以同一时刻只能有一个线程执行被同步的方法，等到线程执行完方法后，其他线程才能继续执行被同步的方法。实例代码如下：
+public class SyncTest implements Runnable{
+//静态变量
+public static int TEST_INT = 0;
+//被同步的实例方法
+public synchronized void increase(){
+TEST_INT++;
+}
+@Override
+public void run() {
+for(int i=1;i<=100000;i++){
+increase();
+}
+}
+public static void main(String[] args) throws InterruptedException {
+//实例化对象
+SyncTest instance = new SyncTest();
+Thread t1=new Thread(instance);
+Thread t2=new Thread(instance);
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+System.out.println(TEST_INT);
+}
+}
+运行上方的程序，结果会是200000，因为main函数中只实例化一个
+不过，上面的情况只是针对一个对象实例进行操作，如果有多个对象实例的话，修饰实例方法是无法保证线程安全的，我们可以把main函数的程序修改下：
+public static void main(String[] args) throws InterruptedException {
+//每个线程实例化一个SyncTest对象
+Thread t1=new Thread(new SyncTest());
+Thread t2=new Thread(new SyncTest());
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+System.out.println(TEST_INT);
+}
+运行程序后，会发现结果永远小于200000，说明synchronized没有起到同步的作用了，说明修饰实例方法只能作用实例对象，不能作用到类对象。
+要想synchronized同步到类对象本身，可以用它修饰类中的静态方法。修改下上述代码中的方法为静态方法，并在main函数中新建两条线程：
+//被同步的静态方法
+public synchronized static void increase(){
+TEST_INT++;
+}
+public static void main(String[] args) throws InterruptedException {
+//每个线程实例化一个SyncTest对象
+Thread t1=new Thread(new SyncTest());
+Thread t2=new Thread(new SyncTest());
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+System.out.println(TEST_INT);
+}
+运行程序，结果是200000，说明synchronized是作用到类对象本身的，其锁对象是当前类的class对象，所以，不管实例化多个对象实例时，被同步的方法同一时刻只能被一个线程执行。
+除了同步实例方法和静态方法外，还可以使用synchronized 同步代码块，某些情况下，我们可能只需要同步一小块代码，假设代码所在的方法体量太大的话，直接同步整个方法会影响程序的运行效率，这种情况下同步代码块就非常的合适，实例代码如下：
+public class SyncTest implements Runnable{
+public static SyncTest instance = new SyncTest();
+//静态变量
+public static int TEST_INT = 0;
+@Override
+public void run() {
+synchronized (instance) {
+for (int i = 1; i <= 100000; i++) {
+TEST_INT++;
+}
+}
+}
+public static void main(String[] args) throws InterruptedException {
+//每个线程实例化一个SyncTest对象
+Thread t1=new Thread(new SyncTest());
+Thread t2=new Thread(new SyncTest());
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+System.out.println(TEST_INT);
+}
+}
+上面的代码中，在run()方法中对实例对象做了同步处理，运行程序后输出的结果为200000。之所以能达到同步的效果，是因为每次当线程进入synchronized包裹的代码块时就会要求当前线程持有instance这个实例对象锁，其他的线程就必须等待，这样也就保证了每次只有一个线程执行被同步的代码块。
+synchronized的用法还是比较简单的，同步的效果也比较明显，尽管如此，synchronized本身还是存在着不少缺陷，比如对锁的释放。
+当线程执行到synchronized同步的程序后会获取对应的锁，其他的线程要一直等待，等到该线程释放对应的锁，而该线程释放锁的情况无非是这两种：
+因为synchronized是由JDK实现的，不需要程序员编写代码去控制加锁和释放。这种释放机制有很大的弊端，举个例子，如果获取到该锁的线程有非常耗时的程序，例如等待IO或者被阻塞了，然后没有及时释放锁，那么其他的线程就必须一直等待，白白浪费了不少时间，这样的结果显然不是我们想看到的，那么有什么办法能解决呢？
+针对这样的情况，Lock就派上用场了。Lock是Java并发工具包下提供的一个接口，同样可以实现同步访问。
+与synchronized不同的是，Lock要求程序员手动控制加锁和释放，它不会自动释放锁，如果没有手动释放锁，线程会一直占用锁，可能造成死锁现象。
+Lock是一个接口，点开源码，可以发现其代码中定义这几个方法：
+public interface Lock {
+void lock();
+void lockInterruptibly() throws InterruptedException;
+boolean tryLock();
+boolean tryLock(long var1, TimeUnit var3) throws InterruptedException;
+void unlock();
+Condition newCondition();
+}
+其中，lock()、lockInterruptibly()、tryLock()、unlock()都是对锁的获取操作，unLock()是释放锁的方法，newCondition()是返回一个接口可以代替Object监视器方法的使用，相当于充当了Object.wait() 和Object.notify() 的作用，起到线程等待和通知的作用。
+前面说到了Lock必须手动释放锁的操作，所以，当调用Lock的获取锁方法后，在执行完程序时还需要调用释放锁的方法，用法大致如下：
+Lock lock = new ReentrantLock();
+lock.lock();
+try {
+//.............执行程序..........
+} finally {
+lock.unlock();
+}
+通过捕获异常的方式来调用Lock释放锁的方法，这样就能保证即使程序发生异常也能成功释放锁。
+值得说明的是，Lock只是一个接口，在作为同步工具使用时，必须先实例化它的子类，而代码中的就是Lock的子类。
+ReentrantLock是Lock一个非常强大的子类，意思是 “可重入锁”，那么可重入锁是什么意思呢？后面会细说，先展示ReentrantLock的具体用法。
+public class LockTest implements Runnable {
+public Lock lock = new ReentrantLock();
+public static int i = 0;
+@Override
+public void run() {
+for (int j = 0;j<100000;j++){
+lock.lock();
+try {
+i++;
+} finally {
+lock.unlock();
+}
+}
+}
+public static void main(String[] args) throws InterruptedException {
+LockTest lt = new LockTest();
+Thread t1 = new Thread(lt);
+Thread t2 = new Thread(lt);
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+System.out.println(i);
+}
+}
+我们在 LockTest 的 run() 里加了ReentrantLock保护临界区资源 ，确保多线程对临界区资源操作的安全性，执行main方法，可以看到结果成功输出 200000。说明ReentrantLock 确实起到了同步 的作用。
+接着说回可重入锁的话题，之所以这么叫，是因为这种锁是可以重复进入的，例如，改造一下run()方法中的代码：
+@Override
+public void run() {
+for (int j = 0;j<100000;j++){
+lock.lock();
+lock.lock();
+try {
+i++;
+} finally {
+lock.unlock();
+lock.unlock();
+}
+}
+}
+运行main方法，代码正常输出200000。说明锁可以被连续使用，因为如果不能被连续使用的话，那么当第二次获取锁时，将会因为第一个锁没释放而一直在等待，同时第二个锁的释放又必须等第二个锁获取并执行 i++ 的程序后才能实现，这样就相当于线程与自己产生了死锁。当然，还需要注意一点，那就是线程获取锁的次数和释放次数必须是相同的，否则就会抛出异常。
+除了Lock接口外，Java的API还提供了另一种读写分离锁，那就是ReadWriteLock。ReadWriteLock是JDK1.5后才引入的，作为读写分离锁，可以有效的帮助减少锁的竞争，提升系统性能。
+用锁分离的机制来提升性能比较好理解。举个例子，有三个线程A1、A2、A3进行写操作，三个线程B1、B2、B3进行读的操作。如果使用重入锁或者synchronized(内部锁)，理论上所有的读之间、读与写之间、写与写之间都是串行操作。当B1进行读取时，B2、B3则必须进行等待。由于读操作并不对数据的完整性进行破坏，所以这种等待是不合理的。因此，读写分离锁就派上了用场，它能支持多个读的操作并行执行。
+需要注意的是，读写分离锁只是针对读读之间能够并行，在读写和写写之间依然会互斥，总结起来就是这三种情况：
+概念上就大概是这样了，下面就是如何使用了。先看一下ReadWriteLock的源码：
+public interface ReadWriteLock {
+Lock readLock();
+Lock writeLock();
+}
+可以看出，ReadWriteLock是一个接口，并且只提供了两个方法，从字面上很容易就可以理解，分别是写入锁的方法  ，返回的都是Lock接口。
+值得说明的是，ReadWriteLock是一个接口，其使用的方式和Lock类似，都是需要先实例化接口的实现类，而其子类只有一个，那就是 ，下面用一段代码来测验一下读写锁的性能：
+public class ReadWriteLockDemo {
+private static ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+private static Lock writeLock = readWriteLock.readLock();
+private static Lock readLock = readWriteLock.readLock();
+private int i;
+//读的方法
+public int ReadValue(Lock lock) throws Exception {
+try {
+lock.lock();
+Thread.sleep(1000);
+return i;
+} finally {
+lock.unlock();
+}
+}
+//写的方法
+public void setValue(Lock lock, int value) throws Exception {
+try {
+lock.lock();
+Thread.sleep(1000);
+i = value;
+} finally {
+lock.unlock();
+}
+}
+public static void main(String[] args) {
+final ReadWriteLockDemo demo = new ReadWriteLockDemo();
+Runnable readRunnable = new Runnable() {
+@Override
+public void run() {
+try {
+demo.ReadValue(readLock);
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+};
+Runnable writeRunnable = new Runnable() {
+@Override
+public void run() {
+try {
+demo.setValue(writeLock, new Random().nextInt());
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+};
+for (int i = 0; i < 20; i++) {
+new Thread(readRunnable).start();
+}
+for (int j = 0; j < 2; j++) {
+new Thread(writeRunnable).start();
+}
+}
+}
+先说明一下这段代码，在ReadWriteLockDemo类中定义了一个ReentrantReadWriteLock实例，并创建它的读写对象，分别是 ，同时，在类中还定义了一个读的方法和写的方法，用Thread.sleep模拟了耗时操作，分别对应读耗时和写耗时。main函数里定义读的线程和写的线程，同时用for循环开启了20个读线程和2个写的线程。
+以上的代码采用的就是简单的读写分离操作，正常运行后，程序两秒多钟就结束了 ，这说明，读的线程之间是并行的，而写的线程之间会相互阻塞，这也印证了之前的结论。
+读写分离锁就讲到这吧，关于ReentrantReadWriteLock本身还有很多妙用，这里就不展开了。
+最后，说一下老生常谈的话题吧，就是对Lock和synchronized做个对比总结。
+1、Lock是一个接口，而synchronized是Java中的关键字，synchronized是内置的语言实现；
+2、synchronized由程序自动释放锁，而Lock需要程序员手动释放，避免死锁；
+3、Lock可以让等待锁的线程响应中断，而synchronized却不行，使用synchronized时，等待的线程会一直等待下去，不能够响应中断；
+4、Lock可以知道是否成功获得锁，但synchronized不行；
+5、Lock支持可重入锁，但synchronized不行；
+6、synchronized锁的范围是整个方法或代码块；而Lock是方法调用的方式，灵活性更大；
+7、ReadWriteLock可以提升多个线程进行读操作的效率，而synchronized做不到；
+再说明一点，从JDK1.6开始，synchronized的性能已经做到了很大的优化，如果是竞争资源不激烈也就是线程不多的情况下，synchronized和Lock的性能是差不多的，而如果资源竞争比较激烈，使用Lock的性能要远远优于synchronized的。
+所以，还是那句话，根据不同的场景选择适合的技术才是最好的。

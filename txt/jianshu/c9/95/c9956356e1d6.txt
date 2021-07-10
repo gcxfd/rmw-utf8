@@ -1,0 +1,542 @@
+【Java并发008】原理层面：ReentrantLock中 await()、signal()/signalAll()全解析
+上篇的文章中我们介绍了AQS源码中lock方法和unlock方法，这两个方法主要是用来解决并发中互斥的问题，这篇文章我们主要介绍AQS中用来解决线程同步问题的await方法、signal方法和signalAll方法，这几个方法主要对应的是synchronized中的wait方法、notify方法和notifAll方法。
+我们实现一个阻塞的队列。
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class MyBlockedQueue<T> {
+final Lock lock = new ReentrantLock();
+// 条件变量：队列不满
+final Condition notFull = lock.newCondition();
+// 条件变量：队列不空
+final Condition notEmpty = lock.newCondition();
+private volatile List<T> list = new ArrayList<>();
+// 入队
+void enq(T x) {
+lock.lock();
+try {
+while (list.size() == 10) {
+// 等待队列不满
+try {
+notFull.await();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+// 省略入队操作
+list.add(x);
+// 入队后, 通知可出队
+notEmpty.signal();
+} finally {
+lock.unlock();
+}
+}
+// 出队
+void deq() {
+lock.lock();
+try {
+while (list.isEmpty()) {
+// 等待队列不空
+try {
+notEmpty.await();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+list.remove(0);
+// 出队后，通知可入队
+notFull.signal();
+} finally {
+lock.unlock();
+}
+}
+public List<T> getList() {
+return list;
+}
+public static void main(String[] args) throws InterruptedException {
+MyBlockedQueue<Integer> myBlockedQueue = new MyBlockedQueue<>();
+Thread thread1 = new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < 20; i++) {
+myBlockedQueue.enq(i);
+}
+}
+});
+Thread thread2 = new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < 10; i++) {
+myBlockedQueue.deq();
+}
+}
+});
+thread1.start();
+thread2.start();
+try {
+Thread.sleep(3000);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+System.out.println(Arrays.toString(myBlockedQueue.getList().toArray()));
+}
+}
+运行的结果如下（输出的是后面的10位）：
+[10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+我们可以看到condition在多线程的中使用，类似于实现了线程之前的通信：
+public class ConditionObject implements Condition, java.io.Serializable {
+private static final long serialVersionUID = 1173984872572414699L;   // 实现Serializable接口，显式指定序列化字段
+private transient Node firstWaiter;   // 作为Node类型，指向等待队列中第一个节点
+private transient Node lastWaiter;    // 作为Node类型，指向等待队列中最后一个节点
+private static final int REINTERRUPT =  1;  // reinterrupt 设置为final变量，命名易懂
+private static final int THROW_IE    = -1;  // throw InterruptedException
+}
+对于Node节点，属性包括七个（重点是前面五个）
+volatile int waitStatus; //当前节点等待状态
+volatile Node prev; //上一个节点
+volatile Node next; //下一个节点
+volatile Thread thread; //节点中的值
+Node nextWaiter; //下一个等待节点
+static final Node SHARED = new Node();  //指示节点共享还是独占，默认初始是共享
+static final Node EXCLUSIVE = null;
+所以同步队列是双向非循环链表，涉及的类变量AbstractQueuedSynchronizer类中的head和tail，分别指向同步队列中的头结点和尾节点。
+所以等待队列是单向非循环链表，涉及的类变量ConditionObject类中的firstWaiter和lastWaiter，分别指向等待队列中的头结点和尾节点。
+当使用到head tail的时候，就说AQS队列建立起来了，单个线程不使用到head tail，所以AQS队列没有建立起来；
+当使用firstWaiter lastWaiter的时候，就说等待队列建立起来了。
+lock()将线程封装到节点里面（此时，节点使用到的属性是thread nextWaiter waitStatus），放到同步队列，即AQS队列中，unlock()将存放线程的节点从同步队列中拿出来，表示这个线程工作完成。
+await()将线程封装到节点里面（此时，节点使用到的属性是thread prev next waitStatus），放到等待队列里面，signal()从等待队列中拿出元素。
+问题：为什么负责同步队列的head和tail在AbstractQueuedSynchronizer类中，但是负责等待队列的firstWaiter和lastWaiter在ConditionObject类中？
+回答：
+我们再来看看await的源码，具体如下图：
+对于上图的解释：
+第一个方法插入到等待队列中，第二个方法释放同步锁，第三个方法阻塞当前线程，三个一体，不能分开。如第二个方法先于第三个方法，先释放同步锁，再挂起线程，目的：为了避免当前线程没有释放的锁的时候，然后就被挂起，从而导致其他的线程获取不到锁，亦或者导致死锁的情况。
+整体流程详细：
+第二步，然后将当前的线程进行解锁（解释：对当前线程解锁的目的是为了避免这个线程没有释放的锁的时候，然后就被挂起，从而导致其他的线程获取不到锁，亦或者导致死锁的情况），对应代码  int savedState = fullyRelease(node);
+第三步，然后将当前的线程进行park（解释：park之后这个线程只能被动地等待其他的线程调用signal方法将当前的线程unpark），对应代码 LockSupport.park(this);
+while (!isOnSyncQueue(node)) {    // addConditionWaiter()返回的node,不在同步队列中，就park
+LockSupport.park(this);    // 将当前的线程进行park，this表示AbstractQueuedSynchronizer对象，表示当前线程
+if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+break;
+}
+第二个方法使用unpark释放同步锁：unparkSuccessor(h);
+第三个方法使用park阻塞当前线程：LockSupport.park(this);
+private Node addConditionWaiter() {
+Node t = lastWaiter;
+// If lastWaiter is cancelled, clean out.
+if (t != null && t.waitStatus != Node.CONDITION) {
+unlinkCancelledWaiters();
+t = lastWaiter;
+}
+// 新建一个节点，节点存放当前线程，状态设置为正在等待条件CONDITION
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+if (t == null)
+firstWaiter = node;
+else
+t.nextWaiter = node;
+lastWaiter = node;
+return node;
+}
+addConditionWaiter()三种情况：
+程序执行如下：
+Node t = lastWaiter;  // 因为要采用尾插法，先将尾指针记录下来
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+firstWaiter = node;   // 因为现在等待队列中就只有这一个刚刚新建的Node节点，所以，将负责等待队列的首尾指针都指向这个节点
+lastWaiter = node;
+return node;   // 返回当前线程新建好的这个节点
+程序执行如上，先将lastWaiter记录下来（因为要采用尾插法，先将尾指针记录下来）
+使用当前线程新建一个节点，这个新节点Node的thread属性为当前线程（表示这个节点存放的就是当前线程，将当前线程放到一个节点中，然后这个节点放入等待队列中），waitStatus=Condition(-2)，
+尾插法经典两步：第一次进入的时候lastWaiter==null（表示当前等待队列中没有节点），因为现在等待队列中就只有这一个刚刚新建的Node节点，所以，将负责等待队列的首尾指针都指向这个节点（ firstWaiter = node; lastWaiter = node;），
+最后返回当前线程新建好的这个节点。
+Node t = lastWaiter;  // 因为要采用尾插法，先将尾指针记录下来
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+t.nextWaiter = node;  // 尾插法经典两步：（1）当前节点下一个节点为新建节点；（2）等待队列尾指针指向新建节点
+lastWaiter = node;
+return node;  // 返回新加入等待队列的节点
+程序执行为如上，先将lastWaiter记录下来（因为要采用尾插法，先将尾指针记录下来）
+使用当前线程新建一个节点
+尾插法经典两步：（1）当前节点下一个节点为新建节点；（2）等待队列尾指针指向新建节点
+最后返回新加入等待队列的节点（里面存放当前线程）。
+执行程序如下：
+Node t = lastWaiter;     // 记录尾指针所指向节点，为使用尾插法准备
+unlinkCancelledWaiters();   //相对于第二种的特殊情况，这里需要处理
+t = lastWaiter;   //相对于第二种的特殊情况，这里需要处理
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+t.nextWaiter = node;   // 尾插法经典两步
+lastWaiter = node;
+return node;
+执行程序如上，没什么问题，看新增的两句
+unlinkCancelledWaiters();
+// 解释：解绑所有的处于取消状态的等待者，
+// 这个使用canceled，表示已取消状态，这里使用watiers，表示不止一个
+t = lastWaiter;   // 解释：重置一下t，继续记录新的尾巴指针指向的节点，为下面尾插法准备
+解释unlinkCancelledWaiters()程序
+private void unlinkCancelledWaiters() {
+Node t = firstWaiter;   // 1、记录等待队列中头指针所指向节点
+// 为什么这里记录头指针指向，因为等待队列是非循环单链表，所以while循环删除已取消结点，只能从头结点开始遍历
+Node trail = null;   // 2、局部变量trail,下面不断移动t，用t来记录当前节点，但是因为等待列表是单链表，所以无法记录当前节点t的上一个节点，所有要在t还没有移动时候，将当前t记录下来放到trail中，然后t再移动
+while (t != null) {
+Node next = t.nextWaiter;   // 3、准备移动，trail记录t,单链表基本操作
+if (t.waitStatus != Node.CONDITION) {
+t.nextWaiter = null;   //
+if (trail == null)  // 4、这是执行 trail=t 之前执行的,trail=t 执行之前，不断向后移动，同时不断修改头指针firstWaiter
+// 4.1 为什么trail=t 执行之前要不断修改头指针firstWaiter？
+//因为t.waitStatus != Node.CONDITION，当前队列不行，所以要不断修改头指针firstWaiter
+firstWaiter = next;  //唯一一个设置头指针的地方，
+// 4.2 为什么执行了trail=t之后就不要修改头指针了？
+// 因为只要找到了为Node.CONDITION的t，就不会删除了，就是保留操作了，就是可以使用的等待队列了
+else   // 这是执行 trail=t 之后执行的
+trail.nextWaiter = next;   //  5、执行了 trail=t 之后，trail -> t -> next,因为t.waitStatus != Node.CONDITION，所以要去掉t,就执行  trail.nextWaiter = next;  变为 trail -> next
+//5.1 为什么trail=t 执行之前不需要删除t,因为这时候trail==null
+//5.2 为什么trail=t 执行之后要删除t,因为这时候firstWaiter确定了，等待队列确定了，当然要删去不合法的t,t.waitStatus != Node.CONDITION
+if (next == null)  // 6、 这是最后一次循环执行的，当next为null,表示后面后面没有了，要跳出while循环了，就是设置这是尾指针指向了，但是此时t.waitStatus != Node.CONDITION,不能设置 lastWaiter = t;所以设置为t的前置节点    lastWaiter = trail;
+lastWaiter = trail;
+}
+else
+trail = t;   // t的上一个记录到trail中
+t = next;  // t移动
+}
+}
+对于unlinkCancelledWaiters()方法的解释：记住上面的1 2 3 4 4.1 4.2 5 5.1 5.2 6就好。
+附加问题：单链表基础知识：trail是如何记录t的上一节点的
+回答：
+Node next = t.nextWaiter;
+trail = t;
+t = next;   // 第一句和第三句实际上就是    t= t.nextWaiter;我们将其拆分开来，在t值还没有修改的时候，在第二句的时候，执行 trail=t ，将t记录下来
+while (t != null){
+Node next = t.nextWaiter;
+trail = t;
+t = next;
+}
+final int fullyRelease(Node node) {
+boolean failed = true;   // 标志位，默认失败，为什么刚开始的时候默认失败？因为刚开始的时候没有执行，一定要执行之后才设置为成功
+try {
+int savedState = getState();  // 获取当前类变量state,这个state是用来记录当前线程的加锁次数的（因为synchronized和lock都是可重入锁，所以可以加锁多次，）
+if (release(savedState)) {  // 如果释放当前线程成功了，要阻塞，就是要进入等待队列，就要释放同步锁
+failed = false;  // 不是失败，成功了
+return savedState;   // 返回当前线程加锁次数，为0就是完全解锁成功了
+} else {
+throw new IllegalMonitorStateException();
+}
+} finally {
+if (failed)
+node.waitStatus = Node.CANCELLED;
+}
+}
+public final boolean release(int arg) {  // 参数就是线程加锁次数
+if (tryRelease(arg)) {   // 释放同步锁 上一篇博客讲过  参数是线程加锁次数
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+解锁的核心方法就是这个release()方法（fullyRelease()方法只是调用这个release()方法，由这个release()方法提供判断，tryRelease()只是给这个release()方法提供判断）：
+对于release()释放同步锁的逻辑总共有三种情况：
+这个并发过程中，只有一个线程加锁，所以AQS队列没有创建，这里if判断不成立，就是tryRelease()判断为false,release()方法直接返回false；
+在并发加锁过程中（就是上一篇博客中的lock.lock()加锁），线程A加锁成功，线程B也来加锁，但是现在线程A没有解锁，这时候形成一个AQS队列，（tip：也就是一个加锁队列，线程A和线程B都锁在这里，线程A在线程B前面，，就是上一篇博客中的），然后线程A解锁完成了，AQS队列中就只剩下线程B，然后线程B来解锁，这个时候线程B就是AQS队列的队首元素，这个时候队首线程B的waitStatus的值为0，if中的if也不会执行（tip：有了AQS队列可以通过第一个if (tryRelease(arg))，但是 if (h != null && h.waitStatus != 0)判断的时候 h != null  h.waitStatus == 0，所以无法通过第二个if）整个方法返回true。
+在并发加锁过程中（就是上一篇博客中的lock.lock()加锁），线程A加锁成功，线程B也来加锁，但是现在线程A没有解锁，这时候形成一个AQS队列，（tip：也就是一个加锁队列，线程A和线程B都锁在这里，线程A在线程B前面，，就是上一篇博客中的），然后线程A先来解锁，这个时候线程A就是AQS队列的队首元素，由于AQS队列中有线程A和线程B两个元素，这个时候队首线程A的waitStatus的值不为0，if中的if执行，unparkSuccessor(h);  解锁头结点的下一个节点（tip：就是解锁线程B），整个方法返回true。
+这里解释一下tryRelease()，很简单
+protected final boolean tryRelease(int releases) {
+int c = getState() - releases;    // 线程加锁次数-线程加锁次数=0
+if (Thread.currentThread() != getExclusiveOwnerThread())
+throw new IllegalMonitorStateException();
+boolean free = false;   // 默认释放成功为false
+if (c == 0) {  // 加锁次数为0
+free = true;    // 标志位释放同步锁成功
+setExclusiveOwnerThread(null);  // 独占线程为null
+}
+setState(c);  // 重新设置类变量state 线程加锁次数
+return free;
+}
+final boolean isOnSyncQueue(Node node) {
+// 当前处于等待状态，而且同步队列中没有前驱者
+if (node.waitStatus == Node.CONDITION || node.prev == null)
+return false;
+// 如果这个node节点在同步队列中有后继者，他一定在同步队列中，
+// prev和next是作用于同步队列的指针，nextWaiter作用于等待队列的指针
+if (node.next != null)
+return true;
+// 上面两个条件都不满足，都被else了
+// node.next==null node.prev!=null&&node.waitStatus != Node.CONDITION
+return findNodeFromTail(node);
+}
+// 能够进入这个方法的，一定是node.next==null node.prev!=null，
+// 所以，在同步队列中，从后往前遍历，找到这个节点返回true,一直到最前面都没找到，返回false
+private boolean findNodeFromTail(Node node) {
+Node t = tail;
+for (;;) {
+if (t == node)
+return true;
+if (t == null)
+return false;
+t = t.prev;
+}
+}
+最后执行LockSupport.park(this)，完成了将当前的线程进行park（解释：park就是阻塞，unpark就是解锁）。
+我们再来看看signal方法和signalAll方法的源码
+大致的流程就是：某个线程调用signal方法或者signalAll方法，
+第一步，将等待队列中的节点放到AQS同步执行队列中（每个节点Node里面存放着线程thread），具体地，signal方法会将当前的等待队列中第一个等待的线程的节点加入到原来的AQS队列中去，而signalAll方法是将等待队列中的所有的等待线程的节点全部加入到原来的AQS的队列中去。
+第二步，获取同步锁：让他们重新获取锁，进行unpark。
+第三步，唤醒当前线程：线程被唤醒，执行对应的线程中代码。
+public final void signal() {
+if (!isHeldExclusively())
+throw new IllegalMonitorStateException();
+Node first = firstWaiter;    // 将等待队列中头指针指向的节点记录下来，因为我们要删去等待队列中第一个节点
+if (first != null)
+doSignal(first);
+}
+private void doSignal(Node first) {
+do {
+if ( (firstWaiter = first.nextWaiter) == null)   // 下一个等待元素为空，表示等待队列中只有一个元素，因为这个元素被移除，就要置空等待队列尾指针   lastWaiter = null;
+lastWaiter = null;
+first.nextWaiter = null;
+} while (!transferForSignal(first) && (first = firstWaiter) != null);
+}
+对于doSignal()方法的解释：对于等待队列这个非循环单向链表的队列，要删除链表头元素
+分为两种情况：
+第一种情况，等待队列中只有一个节点，则执行过程为：
+firstWaiter = first.nextWaiter   // 需要修改等待队列头指针，指向当前等待队列的下一个节点
+lastWaiter = null;    // 没有元素了，置空等待队列尾指针
+first.nextWaiter = null;   // 需要置空当前等待队列的第一个节点的nextWaiter指针
+第二种情况，等待队列中2-n个节点，则执行过程为：
+firstWaiter = first.nextWaiter  // 需要修改等待队列头指针，指向当前等待队列的下一个节点
+first.nextWaiter = null;  // 需要置空当前等待队列的第一个节点的nextWaiter指针
+transferForSignal(first) 方法，实参是first等待队列队首节点，表示等待队列队首删除的节点，同步队列队尾添加的节点
+transferForSignal(first)  要将等待队列中移除的这个节点使用尾插法插入到同步队列中，所以直接将这个first节点作为参数传递给transferForSignal()操作，记住，这个first节点就是被等待队列移除的节点
+final boolean transferForSignal(Node node) {
+if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+return false;
+Node p = enq(node);  // 将node节点这个被等待队列移除的节点尾插法插入到的同步队列中
+int ws = p.waitStatus;
+if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+LockSupport.unpark(node.thread);
+return true;
+}
+对于enq()两种情况，
+1、同步队列中没有节点，所以tail == null
+2、同步队列中有节点，所以tail != null
+第一种情况：同步队列中没有节点，所以tail==null，程序执行如下：
+Node t = tail;  // 同步队列中没有节点，tail==null
+compareAndSetHead(new Node())  //
+tail = head;
+t=tail;   // 重新更新尾节点记录
+// 插入操作三步骤
+node.prev = t;
+compareAndSetTail(t, node)
+t.next = node;
+return t;   // 返回尾节点前面的一个节点，当前同步队列中一共两个节点 t node,现在返回t
+第二种情况：同步队列中有节点，所以tail!=null，程序执行如下：
+Node t = tail;  // 同步队列中没有节点，tail!=null
+// 插入操作三步骤
+node.prev = t;
+compareAndSetTail(t, node)
+t.next = node;
+return t;   // 返回尾节点前面的一个节点，当前同步队列中一共n个节点 node1 node2 ... t node,现在返回t
+问题1：为什么enq()方法返回的是尾节点的前一个节点的状态？
+回答1：因为尾节点的前一个节点，就是插入前的尾节点啊，所有说enq的意义在于两点，插入参数指定的新节点+返回原来的尾节点。
+问题2：为什么enq()方法中tail==null，一定要新建一个节点？
+回答2：接上面，因为enq的意义在于两点，插入参数指定的新节点+返回原来的尾节点，因为要返回原来的尾节点，所有如果没有原来的尾节点，就要新建一个节点当做原来的尾节点，为返回值服务。
+enq()方法给同步队列队尾添加节点后，不等transferForSignal()执行完，await()方法中的循环检测很快就检测到了，同步队列中的有了刚刚被阻塞的节点（就是刚刚被阻塞的节点从阻塞队列中出来了，到同步队列中去了，所有这个这个节点里面的线程可以竞争同步锁了，tryAcquire）
+public final void await() throws InterruptedException {
+if (Thread.interrupted())
+throw new InterruptedException();
+Node node = addConditionWaiter();
+int savedState = fullyRelease(node);
+int interruptMode = 0;
+while (!isOnSyncQueue(node)) {   // 当同步队列中有了这个节点
+LockSupport.park(this);
+if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+break;
+}
+// acquireQueued(node, savedState)
+if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+interruptMode = REINTERRUPT;
+if (node.nextWaiter != null) // clean up if cancelled
+unlinkCancelledWaiters();
+if (interruptMode != 0)
+reportInterruptAfterWait(interruptMode);
+}
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {  // tryAcquire获取同步锁成功
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) && parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+接上面，await()方法中被阻塞的节点放开后，可以参与同步锁的抢占，CAS操作抢占同步锁成功后，transferForSignal()方法里面唤醒node节点当前线程，即执行LockSupport.unpark(node.thread)语句。
+final boolean transferForSignal(Node node) {
+if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+return false;
+Node p = enq(node);  // 将node节点这个被等待队列移除的节点尾插法插入到的同步队列中,返回尾节点的前一个节点
+int ws = p.waitStatus;  // 尾节点前一个节点状态，上一个尾节点的状态
+if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))  // 如果上一个尾节点ws==1,表示上一个节点已经被取消cannceled，或者上一个尾节点cas设置等待状态失败
+LockSupport.unpark(node.thread);   // 唤醒node线程重新同步
+return true;
+}
+面试问题：lock机制是如何实现condition的await和signal的(因为synchronized直接使用Object类的wait()和notify()方法)？
+回答：就是下面“面试金手指”部分的，都答上去就好了。
+核心语言组织：AQS类和Node类
+AQS本质是一个非循环的双向链表（也可以称为队列），所以它是由一个个节点构成的，就是Node，后面的lock() unlock() await() signal()/signalAll()都是以Node为基本元素操作的，那么在这个Node类中需要保存什么信息呢？
+回答：Node节点属性包括七个（重点是前面五个）
+volatile int waitStatus; //当前节点等待状态
+volatile Node prev; //上一个节点
+volatile Node next; //下一个节点
+volatile Thread thread; //节点中的值
+Node nextWaiter; //下一个等待节点
+static final Node SHARED = new Node(); //指示节点共享还是独占，默认初始是共享
+static final Node EXCLUSIVE = null;
+所以同步队列是双向非循环链表，涉及的类变量AbstractQueuedSynchronizer类中的head和tail，分别指向同步队列中的头结点和尾节点。
+所以等待队列是单向非循环链表，涉及的类变量ConditionObject类中的firstWaiter和lastWaiter，分别指向等待队列中的头结点和尾节点。
+当使用到head tail的时候，就说AQS队列建立起来了，单个线程不使用到head tail，所以AQS队列没有建立起来；
+当使用firstWaiter lastWaiter的时候，就说等待队列建立起来了。
+lock()将线程封装到节点里面（此时，节点使用到的属性是thread nextWaiter waitStatus），放到同步队列，即AQS队列中，unlock()将存放线程的节点从同步队列中拿出来，表示这个线程工作完成。
+await()将线程封装到节点里面（此时，节点使用到的属性是thread prev next waitStatus），放到等待队列里面，signal()从等待队列中拿出元素。
+问题：为什么负责同步队列的head和tail在AbstractQueuedSynchronizer类中，但是负责等待队列的firstWaiter和lastWaiter在ConditionObject类中？
+回答：
+大致流程：第一个方法插入到等待队列中，第二个方法释放同步锁，第三个方法阻塞当前线程，三个一体，不能分开，第二个方法先于第三个方法，先释放同步锁，再挂起线程，目的：为了避免当前线程没有释放的锁的时候，然后就被挂起，从而导致其他的线程获取不到锁，亦或者导致死锁的情况。
+整体流程详细：
+第二步，然后将当前的线程进行解锁（解释：对当前线程解锁的目的是为了避免这个线程没有释放的锁的时候，然后就被挂起，从而导致其他的线程获取不到锁，亦或者导致死锁的情况），对应代码  int savedState = fullyRelease(node);
+第三步，然后将当前的线程进行park（解释：park之后这个线程只能被动地等待其他的线程调用signal方法将当前的线程unpark），对应代码 LockSupport.park(this);
+第二个方法使用unpark释放同步锁：unparkSuccessor(h);
+第三个方法使用park阻塞当前线程：LockSupport.park(this);
+程序执行如下：
+Node t = lastWaiter;  // 因为要采用尾插法，先将尾指针记录下来
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+firstWaiter = node;   // 因为现在等待队列中就只有这一个刚刚新建的Node节点，所以，将负责等待队列的首尾指针都指向这个节点
+lastWaiter = node;
+return node;   // 返回当前线程新建好的这个节点
+执行程序如下：
+Node t = lastWaiter;  // 因为要采用尾插法，先将尾指针记录下来
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+t.nextWaiter = node;  // 尾插法经典两步：（1）当前节点下一个节点为新建节点；（2）等待队列尾指针指向新建节点
+lastWaiter = node;
+return node;  // 返回新加入等待队列的节点
+执行程序如下：
+Node t = lastWaiter;     // 记录尾指针所指向节点，为使用尾插法准备
+unlinkCancelledWaiters();   //相对于第二种的特殊情况，这里需要处理
+t = lastWaiter;   //相对于第二种的特殊情况，这里需要处理
+Node node = new Node(Thread.currentThread(), Node.CONDITION);
+t.nextWaiter = node;   // 尾插法经典两步
+lastWaiter = node;
+return node;
+执行程序如上，没什么问题，看新增的两句
+unlinkCancelledWaiters();
+// 解释：解绑所有的处于取消状态的等待者，
+// 这个使用canceled，表示已取消状态，这里使用watiers，表示不止一个
+t = lastWaiter;   // 解释：重置一下t，继续记录新的尾巴指针指向的节点，为下面尾插法准备
+private void unlinkCancelledWaiters() {
+Node t = firstWaiter;   // 1、记录等待队列中头指针所指向节点
+// 为什么这里记录头指针指向，因为等待队列是非循环单链表，所以while循环删除已取消结点，只能从头结点开始遍历
+Node trail = null;   // 2、局部变量trail,下面不断移动t，用t来记录当前节点，但是因为等待列表是单链表，所以无法记录当前节点t的上一个节点，所有要在t还没有移动时候，将当前t记录下来放到trail中，然后t再移动
+while (t != null) {
+Node next = t.nextWaiter;   // 3、准备移动，trail记录t,单链表基本操作
+if (t.waitStatus != Node.CONDITION) {
+t.nextWaiter = null;   //
+if (trail == null)  // 4、这是执行 trail=t 之前执行的,trail=t 执行之前，不断向后移动，同时不断修改头指针firstWaiter
+// 4.1 为什么trail=t 执行之前要不断修改头指针firstWaiter？
+//因为t.waitStatus != Node.CONDITION，当前队列不行，所以要不断修改头指针firstWaiter
+firstWaiter = next;  //唯一一个设置头指针的地方，
+// 4.2 为什么执行了trail=t之后就不要修改头指针了？
+// 因为只要找到了为Node.CONDITION的t，就不会删除了，就是保留操作了，就是可以使用的等待队列了
+else   // 这是执行 trail=t 之后执行的
+trail.nextWaiter = next;   //  5、执行了 trail=t 之后，trail -> t -> next,因为t.waitStatus != Node.CONDITION，所以要去掉t,就执行  trail.nextWaiter = next;  变为 trail -> next
+//5.1 为什么trail=t 执行之前不需要删除t,因为这时候trail==null
+//5.2 为什么trail=t 执行之后要删除t,因为这时候firstWaiter确定了，等待队列确定了，当然要删去不合法的t,t.waitStatus != Node.CONDITION
+if (next == null)  // 6、 这是最后一次循环执行的，当next为null,表示后面后面没有了，要跳出while循环了，就是设置这是尾指针指向了，但是此时t.waitStatus != Node.CONDITION,不能设置 lastWaiter = t;所以设置为t的前置节点    lastWaiter = trail;
+lastWaiter = trail;
+}
+else
+trail = t;   // t的上一个记录到trail中
+t = next;  // t移动
+}
+}
+解锁的核心方法就是这个release()方法（fullyRelease()方法只是调用这个release()方法，由这个release()方法提供判断，tryRelease()只是给这个release()方法提供判断）：
+对于release()释放同步锁的逻辑总共有三种情况：
+这个并发过程中，只有一个线程加锁，所以AQS队列没有创建，这里if判断不成立，就是tryRelease()判断为false,release()方法直接返回false；
+在并发加锁过程中（就是上一篇博客中的lock.lock()加锁），线程A加锁成功，线程B也来加锁，但是现在线程A没有解锁，这时候形成一个AQS队列，（tip：也就是一个加锁队列，线程A和线程B都锁在这里，线程A在线程B前面，，就是上一篇博客中的），然后线程A解锁完成了，AQS队列中就只剩下线程B，然后线程B来解锁，这个时候线程B就是AQS队列的队首元素，这个时候队首线程B的waitStatus的值为0，if中的if也不会执行（tip：有了AQS队列可以通过第一个if (tryRelease(arg))，但是 if (h != null && h.waitStatus != 0)判断的时候 h != null  h.waitStatus == 0，所以无法通过第二个if）整个方法返回true。
+在并发加锁过程中（就是上一篇博客中的lock.lock()加锁），线程A加锁成功，线程B也来加锁，但是现在线程A没有解锁，这时候形成一个AQS队列，（tip：也就是一个加锁队列，线程A和线程B都锁在这里，线程A在线程B前面，，就是上一篇博客中的），然后线程A先来解锁，这个时候线程A就是AQS队列的队首元素，由于AQS队列中有线程A和线程B两个元素，这个时候队首线程A的waitStatus的值不为0，if中的if执行，unparkSuccessor(h);  解锁头结点的下一个节点（tip：就是解锁线程B），整个方法返回true。
+final boolean isOnSyncQueue(Node node) {
+// 当前处于等待状态，而且同步队列中没有前驱者
+if (node.waitStatus == Node.CONDITION || node.prev == null)
+return false;
+// 如果这个node节点在同步队列中有后继者，他一定在同步队列中，
+// prev和next是作用于同步队列的指针，nextWaiter作用于等待队列的指针
+if (node.next != null)
+return true;
+// 上面两个条件都不满足，都被else了
+// node.next==null node.prev!=null&&node.waitStatus != Node.CONDITION
+return findNodeFromTail(node);
+}
+// 能够进入这个方法的，一定是node.next==null node.prev!=null，
+// 所以，在同步队列中，从后往前遍历，找到这个节点返回true,一直到最前面都没找到，返回false
+private boolean findNodeFromTail(Node node) {
+Node t = tail;
+for (;;) {
+if (t == node)
+return true;
+if (t == null)
+return false;
+t = t.prev;
+}
+}
+最后执行LockSupport.park(this)，完成了将当前的线程进行park（解释：park就是阻塞，unpark就是解锁）。
+第一步，等待队列中的节点放到AQS同步执行队列中，节点Node里面存放着线程thread，其中，signal方法会将当前的等待队列中第一个等待的线程的节点加入到原来的AQS队列中去，而signalAll方法是将等待队列中的所有的等待线程的节点全部加入到原来的AQS的队列中去
+第二步，获取同步锁
+第三步，唤醒当前线程
+分为两种情况：
+如果等待队列中只有一个节点
+firstWaiter = first.nextWaiter   // 需要修改等待队列头指针，指向当前等待队列的下一个节点
+lastWaiter = null;    // 没有元素了，置空等待队列尾指针
+first.nextWaiter = null;   // 需要置空当前等待队列的第一个节点的nextWaiter指针
+如果等待队列中2-n个节点
+firstWaiter = first.nextWaiter  // 需要修改等待队列头指针，指向当前等待队列的下一个节点
+first.nextWaiter = null;  // 需要置空当前等待队列的第一个节点的nextWaiter指针
+first节点：等待队列队首删除的节点，同步队列队尾添加的节点：transferForSignal(first)  要将等待队列中移除的这个节点使用尾插法插入到同步队列中，所以直接将这个first节点作为参数传递给transferForSignal()操作，记住，这个first节点就是被等待队列移除的节点
+同步队列中的添加这个节点：enq()
+对于enq()两种情况，
+1、同步队列中没有节点，所以tail==null
+2、同步队列中有节点，所以tail!=null
+第一种情况：同步队列中没有节点，所以tail==null
+程序执行如下：
+Node t = tail;  // 同步队列中没有节点，tail==null
+compareAndSetHead(new Node())  //
+tail = head;
+t=tail;   // 重新更新尾节点记录
+// 插入操作三步骤
+node.prev = t;
+compareAndSetTail(t, node)
+t.next = node;
+return t;   // 返回尾节点前面的一个节点，当前同步队列中一共两个节点 t node,现在返回t
+第二种情况：同步队列中有节点，所以tail!=null
+程序执行如下：
+Node t = tail;  // 同步队列中没有节点，tail!=null
+// 插入操作三步骤
+node.prev = t;
+compareAndSetTail(t, node)
+t.next = node;
+return t;   // 返回尾节点前面的一个节点，当前同步队列中一共n个节点 node1 node2 ... t node,现在返回t
+问题1：为什么enq()方法返回的是尾节点的前一个节点的状态？
+回答1：因为尾节点的前一个节点，就是插入前的尾节点啊，所有说enq的意义在于两点，插入参数指定的新节点+返回原来的尾节点
+问题2：为什么enq()方法中tail==null，一定要新建一个节点？
+回答2：接上面，因为enq的意义在于两点，插入参数指定的新节点+返回原来的尾节点，因为要返回原来的尾节点，所有如果没有原来的尾节点，就要新建一个节点当做原来的尾节点，为返回值服务
+enq()方法为工作队列添加节点后，不等transferForSignal()执行完，await()方法中的循环检测很快就检测到了，同步队列中的有了刚刚被阻塞的节点（就是刚刚被阻塞的节点从阻塞队列中出来了，到同步队列中去了，所有这个这个节点里面的线程可以竞争同步锁了，tryAcquire）
+await()抢占同步锁后，transferForSignal()方法里面唤醒node节点当前线程
+原理层面：ReentrantLock中await()与signal()/signalAll()(核心:ConditionObject中的等待队列)，完成了。
+天天打码，天天进步！！！

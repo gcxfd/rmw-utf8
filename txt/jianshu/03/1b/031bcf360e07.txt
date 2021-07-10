@@ -1,0 +1,498 @@
+并发编程之java.util.concurrent（一）
+本篇不写前言，直接扒衣服！
+volatile变量：volatile保证变量在内存中的可见性。java线程模型包括线程的私有内存和所有线程的公共内存，这与cpu缓存和内存类似。线程对变量进行操作的时候一般是从公共内存中拷贝变量的副本，等修改完之后重新写入到公共内存，这存在并发风险。而被volatile标注的变量通过CPU原语保证了变量的内存可见性，也就是说一个线程读到工作内存中的变量一定是其他线程已经更新到内存中的变量。为简单起见，你可以想象成所有线程都在公共内存中操作volatile变量，这样一个线程对volatile的更改其他线程都看的见，即内存可见性！
+CAS：compare and swap，比较-相等-替换新值，跟底层CPU有关，一般CAS操作的都是volatile变量。CAS操作包含内存位置（V）、预期原值（A）和新值(B)， 如果内存位置的值与预期原值相匹配，那么处理器会自动将该位置值更新为新值 。否则，处理器不做任何操作。如方法a.CAS(b,c)，如果内存中a与预期值b相等，那么把a更新成c。cas操作在java中由sun.misc.Unsafe类全权代理了！
+最底层结：concurrent包中用cas死循环修改volatile变量直到修改成功是最常见的手法！
+AtomicXXX类：常用基本类型和引用都有Atomic实现，其中最重要的两点当然是一个volatile变量和一个CAS操作。++i和i++操作就是volatile和cas的典型用法，incrementAndget和getAndincrement是两个实现方法，死循环：首先获取volatile变量值a，然后执行a.cas(a,a+1)直到修改成功。
+AQS框架：总有面试官会问你AQS框架，尽管我怀疑他们并不真正了解所有细节，Doug lea最屌的思想应该都在AQS框架里了，直接上图（借用，侵删）
+该类最主要的两部分就是state状态和Node节点（即队列中的元素），前一个是资源状态，后一个还是cas操作volatile的典型应用，Node还分为独占模式和共享模式
+以独占模式为例，想象医院某诊室排队看病。
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+这是竞争资源的入口，不管有多少线程、是富得流油还是穷的吃土都要从这进！
+首先，尝试获取资源，成true败false，此方法每个子类有自己的实现，就像有的医院需要排队（公平锁），有的可以花钱不用排队（非公平锁）。
+protected boolean tryAcquire(int arg) {
+throw new UnsupportedOperationException();
+}
+然后，为当前线程创建节点Node并设置成独占模式（相当于每个看病的人取了一个号，并且是独占诊室的那种号），先用快速方法加入队尾，加入失败的话调用enq方法死循环加入，总之要保证每个病人都取到了号，并且进入排队状态。
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// 快速加入队尾，如果失败就调用enq方法死循环加入
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);
+return node;
+}
+private Node enq(final Node node) {
+//CAS外加死循环操作volatile的Node节点，这个套路我们太熟悉了，保证了队尾竞争的线程安全
+for (;;) {
+Node t = tail;
+if (t == null) { // Must initialize
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+再次，线程不能一直等待，需要休息，于是线程轮询查看前驱节点是否占用了资源，如果是那么自己尝试获取资源，获取到了就把自己设置为头结点。如果不是，那么没关系，调用shouldParkAfterFailedAcquire(p, node) && parkAndCheckInterrupt()两个方法。
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // 帮助垃圾回收
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) && parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+然后，假如当前线程前驱节点没有占用资源或者人家占用资源还没释放，那么调用shouldParkAfterFailedAcquire(p, node)方法
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+return true;
+if (ws > 0) {
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+看上面代码，ws是当前线程前驱节点的状态，如果前驱节点状态是SIGNAL，意思是后继节点应该等待，那么返回true。否则，如果前驱节点状态大于0，意思就是取消了（不排队了）那么就移动到不排队的节点前面去，不排队的线程最后会被垃圾回收器回收。如果前驱节点状态是其他，那么就把前驱节点状态设置成SIGNAL，告诉他当前线程需要被等待。以上过程执行完当前线程就可以等待了parkAndCheckInterrupt()（跟前面排队的病人沟通，告诉他我要休息一下，快叫到我的时候通知我一下）。
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+最后，可见这里面的等待实际上是调用LockSupport.park方法实现的，这里的park实际上与wait方法类似。
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+首先，释放资源入口是release方法，release实际上与acquire恰好镜像，如tryRelease可以自己实现，然后真正释放的时候实际上调用了unparkSuccessor（h）方法
+private void unparkSuccessor(Node node) {
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+Node s = node.next;
+if (s == null || s.waitStatus > 0) {
+s = null;
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+if (s != null)
+LockSupport.unpark(s.thread);
+}
+解除占用方法，可以看到，首先将占用资源的线程节点状态由设置成0，然后调用LockSupport.unpark方法唤醒next节点的线程，相当于await/signal方法中的signal。
+独占模式说完下面分析下共享模式。
+猜也能猜个大概，肯定是acquireShare巴拉巴拉的。
+public final void acquireShared(int arg) {
+if (tryAcquireShared(arg) < 0)
+doAcquireShared(arg);
+}
+上面代码是获取共享资源的，首先尝试获取，这个与独占模式类似，稍有不同的地方是其返回值，-1表示获取失败，0表示获取成功但没有可用资源，1表示获取成功并且有资源。-1表示厕所门都没进去、0表示进厕所门了但是没有坑位、1表示即进入了厕所门又有坑位。
+重点：共享资源可以有多份，这样可以同时让多个线程共享资源，所以PROPAGATE状态可以保证在一个线程释放资源后其他状态为PROPAGATE的线程都能被唤醒。
+private void doAcquireShared(int arg) {
+final Node node = addWaiter(Node.SHARED);
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();
+if (p == head) {
+int r = tryAcquireShared(arg);
+if (r >= 0) {
+setHeadAndPropagate(node, r);
+p.next = null; // help GC
+if (interrupted)
+selfInterrupt();
+failed = false;
+return;
+}
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+上述代码在尝试获取资源失败后进入（即没进入厕所门就进入该代码块）。addWaiter独占模式中已经讲过了，先快速入队，快速失败后enq死循环cas操作队尾入队，只不过这里设置的模式使共享而已。然后看死循环里面的内容，是不是太熟悉了？过程实际上是一样的，先看下排在自己前面的人是不是占着坑位，如果是就尝试获取下资源，如果失败就告诉前面排队的你的下一位是我，释放之后通知我，我要去等待了（实际上就是把前驱节点状态设置成SIGNAL）。
+private void setHeadAndPropagate(Node node, int propagate) {
+Node h = head; // Record old head for check below
+setHead(node);
+if (propagate > 0 || h == null || h.waitStatus < 0 ||
+(h = head) == null || h.waitStatus < 0) {
+Node s = node.next;
+if (s == null || s.isShared())
+doReleaseShared();
+}
+}
+注意上面代码与独占模式的小区别，setHeadAndPropagate()执行的时候表示当前节点线程已经获取到了资源。此时它把自己设置为头结点，并需要唤醒其后继节点（如果有的话），唤醒过程实际上调用了doReleaseShared方法。
+public final boolean releaseShared(int arg) {
+if (tryReleaseShared(arg)) {
+doReleaseShared();
+return true;
+}
+return false;
+}
+ok，套路与独占模式相同，先尝试释放（子类自己实现），然后执行释放
+private void doReleaseShared() {
+for (;;) {
+Node h = head;
+if (h != null && h != tail) {
+int ws = h.waitStatus;
+if (ws == Node.SIGNAL) {
+if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
+continue;            // loop to recheck cases
+unparkSuccessor(h);
+}
+else if (ws == 0 && !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
+continue;                // loop on failed CAS
+}
+if (h == head)                   // loop if head changed
+break;
+}
+}
+上述代码是共享模式下释放资源的实质代码。首先查看后继线程是否需要被唤醒，如果需要那么执行唤醒，让它过来抢占资源，然后会把自身状态设置成PROPAGATE保证传播唤醒。
+非阻塞数据结构：这一层的各种数据结构如concurrentHashMap，LinkedBlockingQueue咱们后续再写，先趁热打铁把AQS的子子孙孙们扒个精光！
+Lock：顶层接口，里面有lock（），unlock（），tryLock（）等重要方法需要子类实现
+Condition：顶层接口，里面有await（），signal（），signalAll（）等重要方法类似于wait/notify等待通知模型。
+ReadWriteLock：顶层接口，两个方法，readLock（）和writeLock（）分别获取读锁和写锁。
+ReentrantLock类：
+该类包含了Sync和其子类FairSync、NonfairSync，前者是公平锁，后者是非公平锁。默认构造函数是非公平锁，可以通过boolean值构造公平锁。既然是一个锁，那么最重要的两个方法当然是关锁和开锁，该类中对开锁和关锁分别实现了公平和非公平两个方法，我们来看下具体实现：
+final void lock() {
+if (compareAndSetState(0, 1))
+setExclusiveOwnerThread(Thread.currentThread());
+else
+acquire(1);
+}
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+final boolean nonfairTryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();
+if (c == 0) {
+if (compareAndSetState(0, acquires)) {
+setExclusiveOwnerThread(current);
+return true;
+}
+}
+else if (current == getExclusiveOwnerThread()) {
+int nextc = c + acquires;
+if (nextc < 0) // overflow
+throw new Error("Maximum lock count exceeded");
+setState(nextc);
+return true;
+}
+return false;
+}
+上述代码是非公平锁的实现方式。先快速占有state资源，如果没占有成功再调用aquire去竞争，竞争过程又先调用了自己实现的tryAcquire方法：”
+用当前线程获取AQS中的资源state，我们前文说过，state等于0表示没有线程占用该资源，所以，这里设置独占，而如果发现当前线程已经占用了资源（state>0并且current==owner）那么就在state基础上加上获取的次数1。
+protected final boolean tryRelease(int releases) {
+int c = getState() - releases;
+if (Thread.currentThread() != getExclusiveOwnerThread())
+throw new IllegalMonitorStateException();
+boolean free = false;
+if (c == 0) {
+free = true;
+setExclusiveOwnerThread(null);
+}
+setState(c);
+return free;
+}
+上述代码是非公平锁解锁过程，之前state被重入了多少次这里就需要释放多少次，并且把当前占有资源的线程设置为null！直接退出就行。
+final void lock() {
+acquire(1);
+}
+public final void acquire(int arg) {
+if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+protected final boolean tryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();
+if (c == 0) {
+if (!hasQueuedPredecessors() &&
+compareAndSetState(0, acquires)) {
+setExclusiveOwnerThread(current);
+return true;
+}
+}
+else if (current == getExclusiveOwnerThread()) {
+int nextc = c + acquires;
+if (nextc < 0)
+throw new Error("Maximum lock count exceeded");
+setState(nextc);
+return true;
+}
+return false;
+}
+上述代码是公平锁实现过程，重点在 if (!hasQueuedPredecessors() &&compareAndSetState(0, acquires)) 这个hasQueuePredescessors方法！只有这个地方公平锁与非公平锁存在差异，该方法顾名思义，判断当前线程节点是否有前驱节点，如果没有才会独占资源。
+公平锁的释放过程与非公平锁相同！
+A：非公平锁在lock（）的时候直接用当前线程占用资源失败之后才会调用acquire方法，这是其一
+B：非公平锁在acquire方法调用过程中调用了自己实现的tryAcquire方法，该方法不会等待判断当前线程是否有前驱节点，而是直接用当前线程占用state资源，这是其二
+多个线程到达lock（）方法
+如果是公平锁，那么多个线程同时竞争，竞争成功的就占有state资源，竞争失败的就去clh队列里面排队，排队过程中自旋那么一两次进入await等待被前驱线程唤醒。
+如果是非公平锁，那么每个线程过来直接尝试占有资源，如果没有成功，那么也是不排队直接尝试获取资源，如果再不成功还是要进入clh队列排队，自旋一两次await等待被前驱线程唤醒。
+一个线程释放资源到达unlock方法
+直接通知他的后继节点过来争抢资源，这个过程还存在新来的线程直接获取state的风险（非公平）。
+CountDownLatch类：
+先说下该类是干啥的，调用CountDownLatch.await()方法的线程会等待构造方法（CountDownLatch（int i））中i个线程都执行过countDown方法后才会继续执行。说白了就是调用await方法的线程请客，等所有线程都到齐之后这个线程才开始做饭。
+下面分析下源码实现：
+构造方法：构造方法实际上把state资源设置成了多份。
+public CountDownLatch(int count) {
+if (count < 0) throw new IllegalArgumentException("count < 0");
+this.sync = new Sync(count);
+}
+Sync(int count) {
+setState(count);
+}
+await方法：实际上是共享模式下获取资源，当前线程在没有获取到资源的情况下会进入到资源竞争队列，共享模式下获取资源。假如现在state=10共10个资源，等待队列里有10个线程，前8个线程获取到了10个资源，第一个和第二个线程分别占用了两个资源，那么当第一个线程释放了2个资源后会通知整个队列的所有标记为shared的10个线程来竞争资源，由于竞争过程是公平的，所以如果此时第9个和第10个线程分别需要1个资源，那么他们两个都会得到满足，加入第9个需要3个资源，那么他需要等待。这就很好的解释了CountDownLatch的await方法，由于等待的线程获取到共享锁之后加入到了队列尾部，它等待的实际上是state变为0,即所有的线程都释放，这个时候r>0执行return；否则state！=0证明有线程在占用共享资源，那么它可能被LockSupport》park方法await等待。
+public void await() throws InterruptedException {
+sync.acquireSharedInterruptibly(1);
+}
+private void doAcquireSharedInterruptibly(int arg)
+throws InterruptedException {
+final Node node = addWaiter(Node.SHARED);
+boolean failed = true;
+try {
+for (;;) {
+final Node p = node.predecessor();
+if (p == head) {
+int r = tryAcquireShared(arg);
+if (r >= 0) {
+setHeadAndPropagate(node, r);
+p.next = null; // help GC
+failed = false;
+return;
+}
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+throw new InterruptedException();
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+countDown方法：可以看到该方法实际上是把资源state减一！！！！
+public void countDown() {
+sync.releaseShared(1);
+}
+public final boolean releaseShared(int arg) {
+if (tryReleaseShared(arg)) {
+doReleaseShared();
+return true;
+}
+return false;
+}
+protected boolean tryReleaseShared(int releases) {
+// Decrement count; signal when transition to zero
+for (;;) {
+int c = getState();
+if (c == 0)
+return false;
+int nextc = c-1;
+if (compareAndSetState(c, nextc))
+return nextc == 0;
+}
+}
+CyclicBarrier类：
+先说下这个类是干嘛的，多个线程执行任务，每个任务内部先调用了CyclicBarrier.await()方法后就会进入等待，直到构造方法中i个线程都执行了await方法才会继续执行任务。相当于4个人打麻将，所有人都到齐之后4个人才开始玩起来。
+这里的源码就不做解释了，不是基于第二层的，而是基于Condition lock等最顶层的，简单写个用法：
+public class CyclicBarrierTest2 {
+static CyclicBarrier c = new CyclicBarrier(2, new A());
+public static void main(String[] args) {
+new Thread(new Runnable() {
+@Override
+public void run() {
+try {
+c.await();
+} catch (Exception e) {
+}
+System.out.println(1);
+}
+}).start();
+try {
+c.await();
+} catch (Exception e) {
+}
+System.out.println(2);
+}
+static class A implements Runnable {
+@Override
+public void run() {
+System.out.println(3);
+}
+}
+}
+Semphore类：
+Semaphore可以控制某个资源可被同时访问的个数，acquire()获取一个许可，如果没有就等待，而release()释放一个许可。比如在Windows下可以设置共享文件的最大客户端访问个数。
+Semphore类本质上把state资源分成多份，通过Shared模式获取和释放资源，并实现了公平获取释放和非公平获取释放两种操作，我们以非公平获取释放为例查看其源码：
+protected int tryAcquireShared(int acquires) {
+return nonfairTryAcquireShared(acquires);
+}
+final int nonfairTryAcquireShared(int acquires) {
+for (;;) {
+int available = getState();
+int remaining = available - acquires;
+if (remaining < 0 ||
+compareAndSetState(available, remaining))
+return remaining;
+}
+}
+上述代码就是非公平锁模式下获取信号量资源，首先获取state值（比如信号量总数为50），然后当前线程需要的数acquires与可用的数做差看是否够用，如果不够用或者设置资源余量成功那么返回资源余量。注意设置资源余量方法是一定会执行的。如果资源余量小于0又会进入到AQS中的方法，涉及到排队，等待等等。这里不再赘述了！
+if (tryAcquireShared(arg) < 0)
+doAcquireSharedInterruptibly(arg);
+}
+protected final boolean tryReleaseShared(int releases) {
+for (;;) {
+int current = getState();
+int next = current + releases;
+if (next < current) // overflow
+throw new Error("Maximum permit count exceeded");
+if (compareAndSetState(current, next))
+return true;
+}
+}
+上述是非公平模式下信号量的释放，同样是操作state资源，不说了，自己看吧
+公平锁的模式就加了一个hasQueuedPredecessors判断。。。。前文已经解释过了。。。。。
+ConditionObject类：
+Condition接口的唯一实现类，该类用于生产者消费者模式，与Object.wait()/notify()类似但是比其更加强大，支持await（）一段时间，还支持多个等待队列。conditionObject最重要的两个方法当然是构造方法、await（）和signal（）几个方法了，下面分析其源码：
+public Condition newCondition() {
+return sync.newCondition();
+}
+上述代码是ConditionObject的构造方法，该Condition只能从lock中获取，所以线程获取Condition有两个时机，一种是调用lock（）方法前，一种是调用lock（）方法后。我们看下await（）方法：
+public final void await() throws InterruptedException {
+if (Thread.interrupted())
+throw new InterruptedException();
+Node node = addConditionWaiter();  //加入到当前Condition的等待队列
+int savedState = fullyRelease(node);  //完全释放自己占有的state资源
+int interruptMode = 0;
+while (!isOnSyncQueue(node)) {        //如果当前线程节点不在同步队列里就一直挂起
+LockSupport.park(this);
+if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+break;
+}
+if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+interruptMode = REINTERRUPT;
+if (node.nextWaiter != null) // clean up if cancelled
+unlinkCancelledWaiters();
+if (interruptMode != 0)
+reportInterruptAfterWait(interruptMode);
+}
+我们看上面代码，关键部分已经做了注释，关键点有三，其一，Condition等待队列是啥？其二，从哪获取资源了需要释放？其三，为什么判断当前线程是否在同步队列里？我们先看addCondtionWaiter方法：
+private Node addConditionWaiter() {
+Node t = lastWaiter;
+//这里的队列与同步CLH队列不是同一个队列，通过nextWaiter而不是next指针串起来的，每个condtion都有自己的队列
+if (t != null && t.waitStatus != Node.CONDITION) { //如果最后一个节点被取消了就清除
+unlinkCancelledWaiters();
+t = lastWaiter;
+}
+Node node = new Node(Thread.currentThread(), Node.CONDITION); //加入对了之前新建的状态是Condition而不是0
+if (t == null)
+firstWaiter = node;
+else
+t.nextWaiter = node;         //这里体现出来不是CLH同步队列，因为调用的是nextWaiter=node
+lastWaiter = node;
+return node;
+}
+上述代码，每一个Condition都有一个自己的等待队列，使用nextWaiter指针而不是CLH队列使用的next指针维护着队列。如果不调用lock（）的条件下直接多线程调用Condition.await方法显而易见会出现并发问题，所以一般await（）方法都在lock.lock()锁内进行。因为在lock()锁内进行，所以肯定存在一个CLH队列维护着多线程的节点，而且当前线程一定竞争到了资源才会执行await方法，现在要释放锁让其他线程进来，所以调用：
+final int fullyRelease(Node node) {
+boolean failed = true;
+try {
+int savedState = getState();      //获取当前线程占有的资源数目
+if (release(savedState)) {           //释放当前占有的资源，唤醒后继节点线程，返回释放资源的数量
+failed = false;
+return savedState;
+} else {
+throw new IllegalMonitorStateException();
+}
+} finally {
+if (failed)
+node.waitStatus = Node.CANCELLED;
+}
+}
+上述代码表示当前线程在真正等待之前首先释放了资源并唤醒了CLH队列中的后继线程。释放了资源之后现在该考虑挂起了。
+final boolean isOnSyncQueue(Node node) {    //while循环执行该代码
+if (node.waitStatus == Node.CONDITION || node.prev == null)  //如果当前线程节点状态是Condition或者不在CLH队列中返回false
+return false;
+if (node.next != null)                      //如果当前线程节点有后继节点证明在CLH队列中，返回True
+return true;
+return findNodeFromTail(node);   //该方法同样是判断是否在同步队列中
+}
+private boolean findNodeFromTail(Node node) {
+Node t = tail;
+for (;;) {
+if (t == node)
+return true;
+if (t == null)
+return false;
+t = t.prev;
+}
+}
+当前线程不在CLH队列中就会把自己挂起，我们看下signal方法来解释下为什么不在CLH队列中就执行挂起
+public final void signal() {
+if (!isHeldExclusively())
+throw new IllegalMonitorStateException();
+Node first = firstWaiter;
+if (first != null)                //如果Condition的等待队列里面有等待线程就执行通知，否则啥也不做。
+doSignal(first);
+}
+private void doSignal(Node first) {
+do {            //do while循环，关键方法在transferForSignal方法
+if ( (firstWaiter = first.nextWaiter) == null)
+lastWaiter = null;
+first.nextWaiter = null;
+} while (!transferForSignal(first) &&(first = firstWaiter) != null);
+}
+如果Condition等待队列的头结点没有把状态变换成SIGNAL就一直执行do循环清空等待队列，我们看下这个方法做了什么？
+final boolean transferForSignal(Node node) {
+if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+return false;
+//把当前节点放入CLH队列，这也解释了之前为什么不在CLH队列就一直挂起！
+Node p = enq(node);
+int ws = p.waitStatus;
+if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL)) //如果当前节点被取消或者设置SIGNAL状态失败那么唤醒该线程。
+LockSupport.unpark(node.thread);
+return true;
+}
+上面就是唤醒Condition线程的关键代码，你可能会有疑问，从哪唤醒了等待队列中的线程呢？哈哈，关键就在于enq（node）就是把当前线程加入到了CLH队列中并把等待节点的状态设置成了SIGNAL，还记得之前CLH队列中的设置SIGNAL吗？（告诉前面线程如果排到号了通知我），没错，实际情况就是signal方法调用之后当前线程需要重新进入到CLH队列竞争锁，而且是排在队尾哦。。。
+最高层里面大多数的类都依赖AQS框架的state和acquire/release方法。这就是AQS框架的精妙所在，模板方法模式，一劳永逸。
+本文很长，后续还会对阻塞队列、并发容器、执行器做源码分析。

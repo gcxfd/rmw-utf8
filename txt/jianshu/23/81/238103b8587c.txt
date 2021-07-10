@@ -1,0 +1,82 @@
+HTML5(H5)疯狂讲义
+万维网的核心语言，超级文本标记语言的第五次重大修订
+HTML5的设计目的是为了在移动设备上支持多媒体。新的语法特征被引进以支持这一点，如video、audio和canvas 标记。HTML5还引进了新的功能，可以真正改变用户与文档的交互方式
+跨平台，自适应网页设计，实时更新
+Dreamweaver,WebStorm, MyEclipse等等
+有很多，此处不一一列举了
+<!DOCTYPE> 声明必须是 HTML 文档的第一行，位于 <html> 标签之前，所有浏览器均支持。
+<!DOCTYPE> 声明不是 HTML 标签；它是指示 web 浏览器关于页面使用哪个 HTML 版本进行编写的指令。
+在 HTML 4.01 中有三种 <!DOCTYPE> 声明。在 HTML5 中只有一种：
+<!DOCTYPE html>
+独占一行的标签
+能随时设置宽度和高度（比如div、p、h1、h2、ul、li）
+多个行内标签能同时显示在一行
+宽度和高度取决于内容的尺寸（比如span、a、label）
+多个行内-块级标签可以显示在同一行
+能随时设置宽度和高度（比如input、button）
+<div style="color:#00FF00">
+<h3>This is a header</h3>
+<p>This is a paragraph.</p>
+</div>
+<p>这是段落。</p>
+<p>这是段落。</p>
+<p>这是段落。</p>
+<p>段落元素由 p 标签定义。</p>
+<h1>这是标题 1</h1>
+<h2>这是标题 2</h2>
+<h3>这是标题 3</h3>
+<h4>这是标题 4</h4>
+<h5>这是标题 5</h5>
+<h6>这是标题 6</h6>
+<p>有序列表：</p>
+<ol>
+<li>打开冰箱门</li>
+<li>把大象放进去</li>
+<li>关上冰箱门</li>
+<li>打开冰箱门</li>
+<li>把大象拿出来</li>
+</ol>
+<p>无序列表：</p>
+<ul>
+<li>雪碧</li>
+<li>可乐</li>
+<li>凉茶</li>
+</ul>
+提示：请使用 <span> 来组合行内元素，以便通过样式来格式化它们。
+注释：span 没有固定的格式表现。当对它应用样式时，它才会产生视觉上的变化。
+<span>some text.</span>
+<a href="http://www.baidu.com">Baidu</a>
+运行结果如下：带有超链接的百度a标签
+<body>
+<p>请点击文本标记之一，就可以触发相关控件：</p>
+<form>
+<label for="male">Male</label>
+<input type="radio" name="sex" id="male" />
+<br />
+<label for="female">Female</label>
+<input type="radio" name="sex" id="female" />
+</form>
+</body>
+<body>
+<form action="action_page.php">
+First name:<br>
+<input type="text" name="firstname" value="Mickey">
+<br>
+Last name:<br>
+<input type="text" name="lastname" value="Mouse">
+<br><br>
+<input type="submit" value="Submit">
+</form>
+<p>If you click "Submit", the form-data will be sent to a page called "action_page.php".</p>
+</body>
+<button type="button">Click Me!</button>
+可以使用display切换块级标签，行内标签，行内块级标签
+p.inline
+{
+display:inline;
+}
+none    此元素不会被显示。此处注意区分与visibility的区别，下面介绍visibility
+block   此元素将显示为块级元素，此元素前后会带有换行符。
+inline  默认。此元素会被显示为行内元素，元素前后没有换行符。
+inline-block    行内块级元素。
+visibility和display两个属性都有隐藏元素的功能。visibility属性设置为none时，相应的标签虽然不显示，但是存在占位符。而display属性设置为none，这个标签就变成了一个不显示的标签。记得还有input的outline的属性设置。

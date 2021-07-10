@@ -1,0 +1,562 @@
+Java多线程
+1 多线程的引入
+1.1 进程与线程
+在学习多线程之前，我们应该明白线程是什么，进程是什么，以及它们的联系与区别，这样才有助于我们理解多线程。
+进程：
+进程是具有一定独立功能的程序关于某个数据集合上的一次运行活动，进程是系统进行资源分配和调度的一个独立单位，每一个进程都有它自己的内存空间和系统资源。
+线程：
+线程是CPU调度和分派的最小执行单元，它是比进程更小的能独立运行的基本单位，是进程的一个实体，是进程中的单个顺序控制流，是一条执行路径。线程自己基本上不拥有系统资源,只拥有一点在运行中必不可少的资源(如程序计数器,一组寄存器和栈),但是它可与同属一个进程的其他的线程共享进程所拥有的全部资源
+区别与联系
+1.包含于被包含的关系，一个进程可以包含多个线程。
+2.相对进程而言，线程是一个更加接近于执行体的概念，它可以与同进程中的其他线程共享数据，但拥有自己的栈空间，拥有独立的执行序列。
+3.进程在执行过程中拥有独立的内存单元，而多个线程共享内存并发操作，从而极大地提高了程序的运行效率
+1.2 多线程
+由于单个线程不能满足我们复杂的并发逻辑业务，诸如异步任务或多任务，同时单线程也不利于程序的健壮性。因此我们需要多线程来完成并发操作。
+多线程指从软件或者硬件上实现多个线程并发执行的技术，一个进程如果有多条执行路径，则称为多线程程序。一个进程如果只有一条执行路径，则称为单线程程序。
+多线程可以充分利用CPU资源，提高CPU的使用率,同时完成几件事情而不互相干扰.
+1.3 多线程的优劣
+多线程的好处:
+1.提高用户体验：使用多线程可以把耗时任务置于后台处理，而不影响应用与用户的交互
+2.异步操作：应用中有些情况下并不一定需要同步阻塞去等待返回结果，可以通过多线程来实现异步，以提高应用响应速度
+3.执行多任务，如多线程下载，一定程度上可以提高效率。
+多线程的缺点:
+1.如果大量线程,会影响性能,因为它们的创建、调度、销毁都是需要耗时的,并且还需考虑对程序的影响。
+2.更多的线程需要更多的内存空间。多个线程共享同一个进程的资源(堆内存和方法区)，但是栈内存是独立的，一个线程一个栈。所以他们仍然是在抢CPU的资源执行，造成了线程运行的随机性。一个时间点上只有能有一个线程执行。多个线程不是真正意义上并发执行。
+3.通常块模型数据是在多个线程间共享的,需要防止线程死锁情况的发生
+1.4 并行和并发。
+并行是逻辑上同时发生，指在某一个时间内同时运行多个程序。
+并发是物理上同时发生，指在某一个时间点同时运行多个程序。
+多个CPU可以实现真正意义上的并发，但必须知道如何调度和控制它们。
+1.5 线程的调度模型
+假设计算机是单CPU，则CPU 在某一个时刻只能执行一条指令，并且线程只有得到 CPU时间片（即使用权），才可以执行指令。那么Java是如何对线程进行调用的呢？有如下两种调度模型：
+两种调度模型：
+分时调度模型 ：所有线程轮流使用 CPU 的使用权，平均分配每个线程占用 CPU 的时间片
+抢占式调度模型 ： 优先让优先级高的线程使用 CPU，如果线程的优先级相同，那么会随机选择一个，优先级高的线程获取的 CPU 时间片相对多一些。
+Java使用的是抢占式调度模型。jvm的启动是多线程的，它最少启动了两个线程（垃圾回收线程与主线程）
+2 多线程的几种实现方式
+java中实现多线程的方式大概有这几种
+继承Thread类方式来实现多线程
+实现Runnable接口方式来实现多线程，需结合Thread类或线程池
+实现Callable接口，并结合线程池方式，通过Future类可以获取线程执行后的结果
+2.1 继承Thread类方式
+1 通过继承Thread类来得到自定义的Thread类
+/**
+* 继承Thread类,并重写run方法
+* 不是类中的所有代码都需要被线程执行的。只有run()方法所包含的代码会被被线程执行。
+*/class MyThread extends Thread{
+public void run() { super.run(); try {
+sleep(3000);
+System.out.println("a new thread is created by extends Thread,name="+getName());
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+} 123456789101112131415123456789101112131415
+2 使用自定义Thread类来创建多线程，useThread方法是在main线程中调用的。
+注意：
+调用run():仅仅是封装被线程执行的代码，直接调用则视为普通方法，没有开启新线程
+调用start():首先启动了线程，然后再由jvm去调用该线程的run()方法。
+private static void useThread() {
+MyThread t1=new MyThread();
+MyThread t2=new MyThread();// t1.run(); // 通过直接调用run方法并没有开启一个新的线程
+t1.start(); // 调用start开启了一个线程
+t1.setName("mythread"); // 设置线程名
+System.out.println(Thread.currentThread().getName());
+} // output
+/// ① 当调用run方法时// a new thread is created by extends Thread,name=mythread// main
+/// ② 当调用start方法时// main// a new thread is created by extends Thread,name=mythread }1234567891011121314151617181912345678910111213141516171819
+2.2 实现Runnable接口方式
+1 自定义类实现Runnable接口
+/**
+* 实现Runnable接口,并重写run方法
+*/class MyRunnable implements Runnable{
+public void run() {
+System.out.println("a new thread is created by implements Thread,name="+Thread.currentThread().getName());
+}
+}123456789123456789
+2 使用MyRunnable，需要将它的实例作为构造参数通过Thread类来创建Thread（即使用Thread(Runnable target) 构造来创建Thread），形式如下：
+Runnable r= new MyRunnable();
+Thread t= new Thread(r);
+/**
+* 使用Runnable实现类来创建线程
+*/private static void useRunnable() {
+MyRunnable r=new MyRunnable();
+Thread t1=new Thread(r);
+Thread t2=new Thread(r);
+t.setName("myrunnable");
+t1.start();
+t2.start(); //t2.start(); // 多次调用start会抛出IllegalThreadStateException
+// 重复调用start方法相当于是线程被调用了两次。而不是两个线程启动。}12345678910111213141234567891011121314
+2.3 通过Callable接口与线程池实现多线程
+1 先了解一下Callable接口
+Callable接口带返回结果并且可能抛出异常的任务。实现者定义了一个不带任何参数的叫做call的方法。 类似于 Runnable，两者都是为那些其实例可能被另一个线程执行的类设计的。但是 Runnable 不会返回结果，并且无法抛出经过检查的异常。
+Executors 类包含一些从其他普通形式转换成 Callable 类的实用方法。
+如下为Callable接口
+public interface Callable { /**
+* Computes a result, or throws an exception if unable to do so.
+*
+* @return computed result
+* @throws Exception if unable to compute a result
+*/
+V call() throws Exception;
+}1234567891012345678910
+2 了解线程池Executors
+使用线程池的原因：
+程序启动一个新线程成本是比较高的，因为它涉及到要与操作系统进行交互。
+使用线程池可以达到线程的重用，很好的提高性能，尤其是当程序中要创建大量生存期很短的线程时，更应该考虑使用线程池。
+线程池的特点：
+线程池里的每一个线程代码结束后，并不会死亡，而是再次回到线程池中成为空闲状态，等待下一个对象来使用。
+从JDK5开始，Java内置支持线程池 ，新增了一个Executors工厂类来产生线程池，有如下几个方法：
+public static ExecutorService newCachedThreadPool()
+创建一个可根据需要创建新线程的线程池，但是在以前构造的线程可用时将重用它们。
+public static ExecutorService newFixedThreadPool(int nThreads)
+创建一个可重用固定线程数的线程池，以共享的无界队列方式来运行这些线程。
+public static ExecutorService newSingleThreadExecutor()
+创建一个使用单个 worker 线程的 Executor，以无界队列方式来运行该线程。
+public static ScheduledExecutorService newScheduledThreadPool(int corePoolSize)
+创建一个线程池，它可安排在给定延迟后运行命令或者定期地执行。
+上面方法返回值皆是ExecutorService对象，该对象表示一个线程池，可以执行Runnable对象
+或者Callable对象代表的线程。它提供了如下方法
+Future submit(Runnable task)
+Future submit(Callable task)1212
+线程池的内容就简单介绍到这，以后再开篇详细梳理。
+3 实现Callable接口，call方法带一个Integer的返回值，之后用Future来接收
+/**
+* 实现Callable接口
+*/class MyTask implements Callable{ @Override
+public Integer call() throws Exception { int result=0; for (int i = 1; i <= 100; i++) {
+result+=i;
+} return result;
+}
+}12345678910111213141234567891011121314
+4 创建线程池并开启线程执行任务，可以带返回值，useCallable方法在main线程调用
+private static void useCallable() throws InterruptedException, ExecutionException {
+Callable task=new MyTask();
+// 创建一个有3个线程的线程池
+ExecutorService fixedExecutor = Executors.newFixedThreadPool(3); // 通过线程池的submit方法来提交一个带返回值的任务，通过Future对象来接收返回值
+Future result = fixedExecutor.submit(task);
+System.out.println(result.get());// 返回结果封装在result对象中，通过get方法获得
+// 线程池默认不自动关闭
+fixedExecutor.shutdown(); // 关闭线程池
+// output
+// 5050}1234567891011121312345678910111213
+3 线程控制
+如下方法对线程进行控制
+public static void sleep(long millis) 线程休眠
+public final void join() 线程加入
+public static void yield() 线程礼让
+public final void setDaemon(boolean on) 后台线程
+public void interrupt() 中断线程
+public final void stop() 中断线程（已弃用）
+还可以通过设置优先级、设置线程组或用等待唤醒来对线程进行控制。
+下面对上述进行实例分析
+3.1 线程休眠(sleep)
+方法：public static void sleep(long millis) throws InterruptedException
+在指定的毫秒数内让当前正在执行的线程休眠（暂停执行）， 此操作受到系统计时器和调度程序精度和准确性的影响。该线程不丢失任何监视器的所属权。
+参数：millis - 以毫秒为单位的休眠时间。
+抛出： InterruptedException - 如果任何线程中断了当前线程。当抛出该异常时，当前线程的中断状态 被清除。
+实例如下：
+private static void sleep() {
+Thread t = new Thread() { public void run() { try {
+System.out.println("休息一秒先~");
+sleep(1000);
+System.out.println("线程休眠结束，起来干活！");
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+};
+t.start();
+} // output
+// 休息一秒先~
+// 线程休眠结束，起来干活！ // 一秒后打印}1234567891011121314151617181912345678910111213141516171819
+3.2 线程加入 (join)
+方法：public final void join() throws InterruptedException
+抛出：InterruptedException , 如果任何线程中断了当前线程。当抛出该异常时，当前线程的中断状态被清除。
+当前线程使用join，其他线程等待该线程终止后才会执行。
+注意：此方法在start方法之后调用，否则无效
+使用示例：
+private static void join() throws InterruptedException {
+Thread joinThread=new MyThread();
+Thread commonThread=new MyThread(); // 在MyThread中的run方法中有3秒的休眠
+joinThread.setName("joinThread");
+commonThread.setName("commonThread");
+joinThread.start();
+joinThread.join(5000);// join,其他线程等待
+commonThread.start();
+System.out.println(Thread.currentThread().getName()+" is over"); // ouput
+// 3秒之后有第一条打印，接着第二条打印，再3秒后有第三条打印// a new thread is created by extends Thread,name=joinThread// main is over// a new thread is created by extends Thread,name=commonThread
+}1234567891011121314151617181912345678910111213141516171819
+3.3 线程礼让 (yield)
+方法：public static void yield()
+暂停当前正在执行的线程对象，并执行其他线程。 静态方法，类名直接调用
+注意：
+yield()使当前运行线程回到可运行状态，以允许具有相同优先级的其他线程获得执行权。使用yield()的目的是让相同优先级的线程之间能适当的轮转执行。
+实际中无法保证yield()一定能达到让步目的，因为让步的线程还有可能被线程调度程序再次选中。
+public class YieldTHreadDemo {
+public static void main(String[] args) {
+Thread t1=new Thread1();
+Thread t2=new Thread2();
+t1.start();
+t2.start();
+} // output (部分)
+...// other thread// yield thread// other thread// yield thread // yield thread // <-- 特例，无法保证一定让其他线程先执行// other thread// other thread// yield thread
+... // 可以看出，yield thread会尽可能的让other thread先得到执行权，但仍然有特例的情况}class Thread1 extends Thread{
+public void run() { super.run(); for (int i = 0; i < 100; i++) {
+System.out.println("yield thread"); try {
+sleep(1000);
+Thread.yield(); // 执行到此会主动让出执行权，线程回到可执行状态，但之后仍然会继续抢执行权
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}class Thread2 extends Thread{
+public void run() { super.run(); for (int i = 0; i < 100; i++) {
+System.out.println("other thread"); try {
+sleep(1000);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051
+3.4 守护线程 (daemon)
+public final void setDaemon(boolean on) 守护线程（后台线程 ）
+通过setDaemon将该线程标记为守护线程或用户线程。true设为守护线程，false为用户线程
+注意：
+当正在运行的线程都是守护线程时，Java 虚拟机退出(The Java Virtual Machine exits when the only threads running are all daemon threads. )。
+该方法必须在启动线程前调用。
+用户线程和守护线程的区别：
+1.主线程结束后用户线程还会继续运行,直到用户线程结束后JVM退出。
+2.主线程结束后，如果没有用户线程，都是守护线程，那么JVM退出.
+使用示例
+public class DaemonThreadDemo { public static void main(String[] args) {
+Thread t1=new MyThread(); // 在MyThread中的run方法中有3秒的休眠
+//t1.setDaemon(true); // 设置守护线程
+t1.start();
+System.out.println(Thread.currentThread().getName()+" is over"); // ouput
+// ①当没有设置setDaemon为true时，t1是用户线程，只有等待它运行结束之后jvm才退出
+// 如下输出// main is over// a new thread is created by extends Thread,name=Thread-0 // 等待3秒后再输出
+// ②设置setDaemon为true时，t1都是守护线程，在主线程结束后它也直接结束了，没有继续运行
+// 打印结果
+// main is over
+}
+}1234567891011121314151617181920212212345678910111213141516171819202122
+3.5 中断线程 (interrupt)
+public void interrupt() 中断线程
+public final void stop() 中断线程（已弃用）
+1、interrupt()不会中断一个正在运行的线程。interrupt()只是改变了阻塞线程的中断状态，它给受阻塞的线程抛出一个中断信号，使受阻线程通过抛出一个异常来退出阻塞状态。
+换言之，可以被中断的情况有如下3种：
+线程在调用 Object类的 wait方法，或者该类的 join、sleep方法过程中受阻，则其中断状态将被清除，它将接收到一个中断异常（InterruptedException），从而提早地终结被阻塞状态。
+线程在可中断的通道上的 I/O 操作中受阻,它将接收到一个中断异常 (ClosedByInterruptException)
+该线程在一个 Selector 中受阻，它将立即从选择操作返回，从而提早地终结被阻塞状态。
+如果线程没有被阻塞，这时调用interrupt()将不起作用（中断一个不处于活动状态的线程不需要任何作用）；否则，线程就将得到InterruptedException异常（该线程必须事先预备好处理此状况），接着退出阻塞状态。
+2、通过stop方法 ， 该方法具有固有的不安全性。 已弃用，不建议使用
+使用示例：
+public class InterruptThreadDemo {
+public static void main(String[] args) {
+InterruptThread thread=new InterruptThread("myInterruptThread");
+thread.start(); try {
+Thread.sleep(2000);
+thread.interrupt(); // 休眠两秒后中断thread线程
+//thread.stop(); // 已弃用，不建议使用
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+} // output// myInterruptThread启动 at 16-9-29 下午8:37// myInterruptThread: InterruptedException occurred // myInterruptThread结束 at 16-9-29 下午8:37}class InterruptThread extends Thread{
+public InterruptThread(String name) { super(name);
+} public void run() {
+System.out.println(getName()
++ "启动 at "
++ DateFormat.getInstance().format(new Date(System.currentTimeMillis()))); try {
+sleep(5000);
+} catch (InterruptedException e) {
+System.out.println(getName()+": InterruptedException occurred ");
+}
+System.out.println(getName()
++ "结束 at "
++ DateFormat.getInstance().format(new Date(System.currentTimeMillis())));
+}
+}12345678910111213141516171819202122232425262728293031323334353637383940411234567891011121314151617181920212223242526272829303132333435363738394041
+3.6 线程的优先级
+线程优先级
+线程优先级高仅仅表示线程获取的 CPU时间片的几率高，但并不代表它一定能先抢到执行权，需要在执行规模比较大时才能看到比较好的效果。
+public final int getPriority():返回线程对象的优先级
+public final void setPriority(int newPriority)：更改线程的优先级。
+优先级在1~10之间 ，默认为5
+public static final int MAX_PRIORITY 10
+public static final int MIN_PRIORITY 1
+public static final int NORM_PRIORITY 5
+设置超出范围则会抛出异常：IllegalArgumentException
+使用示例
+private static void test() {
+Thread t = new MyThread(); int priority = t.getPriority(); // 获取优先级的大小，默认为5
+System.out.println("priority=" + priority); // t.setPriority(11); // 优先级在1~10之间，超出范围会抛出IllegalArgumentException
+t.setPriority(10); // 设置优先级的大小
+System.out.println(t.getPriority()); // 打印获取的优先级
+}1234567891012345678910
+3.7 线程组
+使用ThreadGroup来表示线程组， 它可以对一批线程进行分类管理，Java允许程序直接对线程组进行控制。
+线程组表示一个线程的集合。此外，线程组也可以包含其他线程组。线程组构成一棵树，在树中，除了初始线程组外，每个线程组都有一个父线程组。
+允许线程访问有关自己的线程组的信息，但是不允许它访问有关其线程组的父线程组或其他任何线程组的信息。
+线程组的创建
+ThreadGroup(String name) 构造一个新线程组。
+ThreadGroup(ThreadGroup parent, String name) 创建一个带有父线程组的新线程组。
+123123
+通过Thread的如下构造使其加入一个组，默认线程的组名为main
+① public Thread(ThreadGroup group, Runnable target, String name)
+②public Thread(ThreadGroup group, Runnable target)
+③public Thread(ThreadGroup group, Runnable target, String name)
+使用示例：
+public class GroupThreadDemo {
+public static void main(String[] args) {
+ThreadGroup tg = new ThreadGroup("mygroup");
+Runnable r=new ActiveThread();
+Thread t1 = new Thread(tg,r, "thread1");
+Thread t2 = new Thread(tg,r, "thread2");
+Thread t3 = new Thread(tg,r, "thread3"); // 将t1，t2，t3加入tg线程组
+Thread t4 = new Thread(r, "thread4"); // t4默认线程组
+System.out.println(t4.getThreadGroup().getName()); // 线程的默认组是main
+tg.setDaemon(false); // 设置组为守护线程组
+tg.setMaxPriority(6); // 设置最大优先级
+// 获取组优先级和组名
+System.out.println(tg.getMaxPriority() + " " + tg.getName());
+t1.start();
+t2.start();
+t3.start();
+Thread[] list = new Thread[tg.activeCount()];
+tg.enumerate(list); // 获取活动的线程的数组拷贝
+System.out.println("list大小="+list.length); for (int i = 0; i < list.length; i++) { // 循环遍历，若活动线程已结束，则会抛出空指针异常
+System.out.println(list[i].getName()+"--"+list[i].getThreadGroup().getMaxPriority());
+}
+}
+}class ActiveThread implements Runnable{
+@Override public void run() { for (int i = 0; i < 10000; i++) { try {
+Thread.sleep(100); // 仅是为了模拟耗时
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}1234567891011121314151617181920212223242526272829303132333435363738394041424312345678910111213141516171819202122232425262728293031323334353637383940414243
+3.8 巧用等待(wait)与唤醒(notify)
+wait(),notify(),notifyAll()等方法都定义在Object类中的，它们是为同步做准备的，使用这些方法时必须要标识所属的同步的锁。锁可以是任意对象，所以这也说明了这些方法出现在Object类中的原因了。
+1 先了解一下wait方法
+在其他线程调用此对象的 notify() 方法或 notifyAll() 方法前，导致当前线程等待。
+当前线程必须拥有此对象监视器(即锁对象)。该线程发布对此监视器的所有权并等待(即wait方法会释放锁对象并使当前线程等待)，直到其他线程通过调用 notify 方法，或 notifyAll 方法通知在此对象的监视器上等待的线程醒来。然后该线程将等到重新获得对监视器的所有权后才能继续执行。
+由于wait( )所等待的对象必须先锁住，因此，它只能用在同步化程序段或者同步化方法内，否则，会抛出异常IllegalMonitorStateException.
+2 了解notify与notifyAll
+唤醒在此对象监视器上等待的单个线程。如果所有线程都在此对象上等待，则会选择唤醒其中一个线程。选择是任意性的，并在对实现做出决定时发生。notifyAll指唤醒所有等待的线程。
+直到当前线程放弃此对象上的锁定，才能继续执行被唤醒的线程。被唤醒的线程将以常规方式与在该对象上主动同步的其他所有线程进行竞争；
+此方法只应由作为此对象监视器的所有者的线程来调用。通过以下三种方法之一，线程可以成为此对象监视器的所有者：
+通过执行此对象的同步实例方法。
+通过执行在此对象上进行同步的 synchronized 语句的正文。
+对于Class 类型的对象，可以通过执行该类的同步静态方法。
+注意事项：
+一次只能有一个线程拥有对象的监视器
+调用某个对象的wait()方法能让当前线程阻塞，并且当前线程必须拥有此对象监视器（即锁），成为此对象监视器方法有上面三种
+调用某个对象的notify()方法能够唤醒一个正在等待此对象监视器的线程，即使有多个线程都在等待，则只能唤醒其中一个线程，并且会任意选择唤醒其中一个线程。
+调用notifyAll()方法能够唤醒所有正在等待这个对象的monitor的线程；
+注意wait方法与 sleep( )的区别, ，wait( )会先释放锁住的对象，然后进入等待状态，而sleep()则不会释放锁
+总结一下
+当前线程的锁对象调用了wait方法，导致当前线程处于等待状态并释放锁，只有当在其他线程中原锁对象调用了notify或notifyAll，通知等待线程醒来，然后直到此线程它抢到了执行权，才会重新执行。
+使用生成消费示例：
+产品类
+public class Product {
+private String name; // 产品名称
+private String place; // 生产地点
+private boolean flag; // 是否生产完毕
+private Object obj=new Object(); public Product() {
+} private Product(String name, String place) { this.name = name; this.place = place;
+} public synchronized void produce(String name,String place){ if (flag) { // 有成品则等待
+try { this.wait(); // wait 释放锁
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+} try {
+Thread.sleep(500);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+setName(name);
+setPlace(place);
+flag=!flag; this.notify();
+} public synchronized Product consume() throws InterruptedException { if (!flag) { // 没有成品则等待
+try { this.wait();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+Thread.sleep(500);
+flag=!flag; this.notify(); return new Product(getName(), getPlace());
+} private String getName() { return name;
+} private void setName(String name) { this.name = name;
+} private String getPlace() { return place;
+} private void setPlace(String place) { this.place = place;
+} @Override
+public String toString() { return "Product [name=" + name + ", place=" + place + "]";
+}
+}12345678910111213141516171819202122232425262728293031323334353637383940414243444546474849505152535455565758596061626364651234567891011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465
+消费者
+public class Consumer implements Runnable {
+private Product product; public Consumer (Product product) { super(); this.product = product;
+} @Override
+public void run() { while (true) {
+Product consume; try {
+consume = product.consume();
+System.out.println(consume.toString());
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}1234567891011121314151617181920212212345678910111213141516171819202122
+生产者
+public class Producer implements Runnable {
+private Product product; private int i=0; public Producer(Product product) { super(); this.product = product;
+} @Override
+public void run() { while (true) { if (i%2==0) {
+product.produce("芒果","芒果园");
+}else{
+product.produce("苹果","苹果园");
+}
+i++;
+}
+}
+}12345678910111213141516171819201234567891011121314151617181920
+开始生产消费
+public class ProduceConsumeDemo { public static void main(String[] args) {
+Product product= new Product();
+Runnable rConsumer = new Producer(product);
+Runnable rProducer = new Consumer(product);
+Thread consumer = new Thread(rConsumer);
+Thread producer = new Thread(rProducer);
+consumer.start();
+producer.start();
+}
+}1234567891011121312345678910111213
+代码较长，可以下载源码看。
+4 线程的生命周期
+5 多线程安全问题与解决
+5.1 多线程出现安全问题的原因：
+①有多线程环境
+②有数据共享
+③有多条语句操作共享数据
+多线程产生安全问题的代码就不贴出来了，网上太多示例，有兴趣的可以下载源码看看。
+5.2 安全问题解决办法
+解决问题的核心思想：每一个时刻只允许一个线程访问共享数据
+使用synchronized同步
+多个线程，务必使用同一个锁对象
+静态方法：类锁 (类的字节码文件对象)
+类锁是锁住整个类的，当有多个线程来声明这个类的对象的时候将会被阻塞，直到拥有这个类锁的对象被销毁或者主动释放了类锁。
+非静态方法：对象锁
+一般一个对象锁是对一个非静态成员变量或者对一个非静态方法进行syncronized修饰。对于对象锁，不同对象访问同一个被syncronized修饰的方法的时候不会阻塞住。
+1.同步代码块
+格式：
+synchronized(对象){
+需要同步的代码;
+}
+同步可以解决安全问题的根本原因就在那个对象上。该对象如同锁的功能。
+注意，对于多个线程而言，此对象必须相同。
+2.同步方法
+把同步关键字加到方法上，如果锁对象是this，就可以考虑使用同步方法。否则能使用同步代码块的尽量使用同步代码块。
+同步方法加锁类型分如下两种情况：
+使用Lock锁（JDK1.5之后）
+Lock 接口的实现允许锁在不同的作用范围内获取和释放，并允许以任何顺序获取和释放多个锁。随着灵活性的增加，也带来了更多的责任。不使用块结构锁就失去了使用 synchronized 方法和语句时会出现的锁自动释放功能。
+void lock() 进行加锁
+void unlock() 进行解锁
+java.util.concurrent.locks 包下 Lock接口有如下方法
+由于Lock是接口，一般通过实现类ReentrantLock来完成其功能
+使用同步示例：
+public class TicketSecureTask implements Runnable {
+private static int Num = 100; // 默认票数,多线程共享
+private static Object lock=new Object(); public void run() { while (true) { synchronized (lock) { if (Num>0) {
+System.out.println(Thread.currentThread().getName() + "售出第" + (Num--)
++ "张票"); try {
+Thread.sleep(100);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+}
+}12345678910111213141516171819201234567891011121314151617181920
+使用Lock锁示例
+private static final Lock lockB = new ReentrantLock(); ...
+lockB.lock();
+System.out.println("B locked"); // 被加锁的部分
+lockB.unlock();
+System.out.println("B unlocked"); ... 123456789123456789
+5.3 同步带来的问题
+效率降低：当线程相当多时，因为每个线程在执行同步代码前都要去判断是否上锁，无形中会降低程序的运行效率。
+死锁问题 ：是指两个或者两个以上的线程在执行的过程中，因争夺资源产生的一种互相等待现象，如果出现了同步嵌套，就容易产生死锁问题
+对于效率降低我们是能不用同步尽量不用。而对于死锁问题，我们尽量避免出现同步嵌套以及Lock锁嵌套使用的情况。
+使用synchronized来实现的死锁已很常见，下面我们写一个用Lock实现的死锁现象。它们实现的本质是一样的。
+/**
+* @author pecu 死锁线程类
+*/public class DieLock extends Thread {
+private static final Lock lockA = new ReentrantLock(); private static final Lock lockB = new ReentrantLock(); private boolean falg; public DieLock(boolean done) { super(); this.falg = done;
+} public void run() { super.run(); if (falg) {
+lockA.lock();
+System.out.println("A locked");
+lockB.lock();
+System.out.println("B locked");
+lockB.unlock();
+System.out.println("B unlocked");
+lockA.unlock();
+System.out.println("A unlocked");
+} else {
+lockB.lock();
+System.out.println("B locked");
+lockA.lock();
+System.out.println("A locked");
+lockA.unlock();
+System.out.println("A unlocked");
+lockB.unlock();
+System.out.println("B unlocked");
+}
+}
+}public class DieLockDemo {
+public static void main(String[] args) {
+lockLock();
+} /**
+* 使用Lock产生的死锁
+*/
+private static void lockLock() {
+Thread t1=new DieLock(true);
+Thread t2=new DieLock(false); // 设置标记位，让它们进入不同的状态
+t1.start(); // 开启线程
+t2.start();
+}12345678910111213141516171819202122232425262728293031323334353637383940414243444546474849505152531234567891011121314151617181920212223242526272829303132333435363738394041424344454647484950515253
+6 Timer与TimerTask
+查看源码我们知道，Timer是对Thread类功能的封装，而TimerTask则是实现了Runnable接口，它们配合使用，以方便我们来安排一次执行或重复执行的任务。
+方法摘要
+void cancel()
+终止此计时器，丢弃所有当前已安排的任务。
+int purge()
+从此计时器的任务队列中移除所有已取消的任务。
+void schedule(TimerTask task, Date time)
+安排在指定的时间执行指定的任务。
+void schedule(TimerTask task, Date firstTime, long period)
+安排指定的任务在指定的时间firstTime时刻开始，每隔period毫秒执行一次。
+void schedule(TimerTask task, long delay)
+安排在指定延迟delay毫秒后执行一次指定的任务。
+void schedule(TimerTask task, long delay, long period)
+安排指定的任务从指定的延迟delay后开始每隔period毫秒执行一次。 void scheduleAtFixedRate(TimerTask task, Date firstTime, long period)
+安排指定的任务在指定的时间开始进行重复的固定速率执行。任务开始时间间隔period ，定时执行，前一个未结束不影响后一个触发执行。
+void scheduleAtFixedRate(TimerTask task, long delay, long period)
+安排指定的任务在指定的延迟后开始进行重复的固定速率执行。任务开始时间间隔period ，定时执行，前一个未结束不影响后一个触发执行。
+12345678910111213141516171234567891011121314151617
+使用示例：
+public class TimerDemo { public static void main(String[] args) {
+Timer timer=new Timer();
+TimerTask task=new TimerTask() {
+@Override public void run() {
+System.out.println("do in background");
+}
+};
+timer.schedule(task, 100); // timer.scheduleAtFixedRate(task, 1000, 1000);
+}
+}1234567891011121314151612345678910111213141516

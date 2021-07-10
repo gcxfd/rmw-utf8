@@ -1,0 +1,824 @@
+Java并发编程（三） - 实战：线程同步的实现
+首先，来看一个多线程竞争临界资源导致的同步不安全问题。
+package com.example.weishj.mytester.concurrency.sync;
+/**
+* 同步安全测试
+*
+* 在无任何同步措施时，并发会导致错误的结果
+*/
+public class SyncTest1 implements Runnable {
+// 共享资源（临界资源）
+private static int race = 0;
+private static final int THREADS_COUNT = 10;
+public void increase() {
+race++;
+}
+@Override
+public void run() {
+for (int i = 0; i < 10000; i++) {
+increase();
+}
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+SyncTest1 runnable = new SyncTest1();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+threads[i] = new Thread(runnable);
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 期待的结果应该是（THREADS_COUNT * 10000）= 100000
+System.out.println("race = " + race + ", time: " + (System.currentTimeMillis() - start));
+}
+}
+运行结果：
+race = 69309, time: 4
+以开头的代码为例，对  做同步安全控制：
+// synchronized实例方法，安全访问临界资源
+public synchronized void increase() {
+race++;
+}
+运行结果：
+race = 100000, time: 29
+既然锁定的是this对象，那么任何同步安全就必须建立在对象锁的前提之上，脱离了当前对象，就不再有同步安全可言。仍然以开头的代码为例：
+package com.example.weishj.mytester.concurrency.sync;
+/**
+* 同步安全测试
+*
+* 脱离了"同一个对象"的前提，synchronized实例方法将不再具有同步安全性
+*/
+public class SyncTest3 implements Runnable {
+// 共享资源（临界资源）
+private static int race = 0;
+private static final int THREADS_COUNT = 10;
+// synchronized实例方法，安全访问临界资源
+public synchronized void increase() {
+race++;
+}
+@Override
+public void run() {
+for (int i = 0; i < 10000; i++) {
+increase();
+}
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+//      SyncTest3 runnable = new SyncTest3();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 不同的对象锁，将导致临界资源不再安全
+threads[i] = new Thread(new SyncTest3());
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 期待的结果应该是（THREADS_COUNT * 10000）= 100000
+System.out.println("race = " + race + ", time: " + (System.currentTimeMillis() - start));
+}
+}
+运行结果：
+race = 72446, time: 5
+因此，使用synchronized实例方法时，需要格外注意实例对象是不是同一个：
+另外，既然是针对对象加锁，那么同一个对象中的多个同步实例方法之间，也是互斥的。
+package com.example.weishj.mytester.concurrency.sync;
+/**
+* 同步安全测试
+*
+* 同一个对象的不同synchronized实例方法之间，也是互斥的
+*/
+public class SyncTest4 {
+private static final int THREADS_COUNT = 2;
+public synchronized void a() {
+int i = 5;
+while (i-- > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", method: a, running...");
+}
+}
+public synchronized void b() {
+int i = 5;
+while (i-- > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", method: b, running...");
+}
+}
+public static void main(String[] args) {
+final SyncTest4 instance = new SyncTest4();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+final int finalI = i;
+threads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+if (finalI % 2 == 0) {
+// 若通过不同对象调用方法ab，则ab之间不存在互斥关系
+//                      new SyncTest4().a();
+// 在同一个对象上调用方法ab，则ab之间是互斥的
+instance.a();
+} else {
+// 若通过不同对象调用方法ab，则ab之间不存在互斥关系
+//                      new SyncTest4().b();
+// 在同一个对象上调用方法ab，则ab之间是互斥的
+instance.b();
+}
+}
+});
+threads[i].start();
+}
+}
+}
+运行结果：
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+若两个线程分别通过不同的对象调用方法ab（上述示例中被注释的代码），则ab之间就不存在互斥关系。可以通过上述示例中被注释的代码来验证，运行结果：
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+综上分析， 有以下关键点需要记住：
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+/**
+* 同步安全测试
+*
+* 同步静态方法，实现线程安全
+*/
+public class SyncStaticTest1 implements Runnable {
+// 共享资源（临界资源）
+private static int race = 0;
+private static final int THREADS_COUNT = 10;
+public static synchronized void increase() {
+race++;
+}
+@Override
+public void run() {
+for (int i = 0; i < 10000; i++) {
+// 这里加this只是为了显式地表明是通过对象来调用increase方法
+this.increase();
+}
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 每次都创建新的SyncStaticTest1实例
+threads[i] = new Thread(new SyncStaticTest1());
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 期待的结果应该是（THREADS_COUNT * 10000）= 100000
+System.out.println("race = " + race + ", time: " + (System.currentTimeMillis() - start));
+}
+}
+运行结果：
+race = 100000, time: 25
+可见，就算是10个线程分别通过不同的SyncStaticTest1实例调用increase方法，仍然是线程安全的。同样地，不同线程分别通过实例对象和类对象调用同步静态方法，也是线程安全的，这里不再做演示。
+但是，同一个类的  之间，则不存在互斥性，因为他们的同步锁不同。如下示例：
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+/**
+* 同步安全测试
+*
+* 同步静态方法和同步实例方法之间，不存在互斥性
+*/
+public class SyncStaticTest2 {
+private static final int THREADS_COUNT = 2;
+public synchronized static void a() {
+int i = 5;
+while (i-- > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", method: a, running...");
+}
+}
+public synchronized void b() {
+int i = 5;
+while (i-- > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", method: b, running...");
+}
+}
+public static void main(String[] args) {
+final SyncStaticTest2 instance = new SyncStaticTest2();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+final int finalI = i;
+threads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+if (finalI % 2 == 0) {
+// 静态方法即可以通过实例调用，也可以通过类调用
+instance.a();
+} else {
+// 实例方法则只能通过实例调用
+instance.b();
+}
+}
+});
+threads[i].start();
+}
+}
+}
+运行结果：
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-0, method: a, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+Thread: Thread-1, method: b, running...
+综上分析， 有以下关键点需要记住：
+从之前的演示示例中，我们可以发现，方法同步后，其耗时（time）一般都在20ms以上，而不同步时，time则只有3ms左右，这印证了synchronized关键字其实是非常低效的，不应该随意使用，如果必须使用，也应该考虑尽量减少同步的范围，尤其当方法体比较大时，应该尽量避免使用同步方法，此时可以考虑用同步代码块来代替。
+synchronized(obj) {...}
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+/**
+* 同步安全测试
+*
+* 同步代码块，实现线程安全
+*/
+public class SyncBlockTest1 implements Runnable {
+// 共享资源（临界资源）
+private static int race = 0;
+private static final int THREADS_COUNT = 10;
+public void increase() {
+race++;
+}
+@Override
+public void run() {
+for (int i = 0; i < 10000; i++) {
+// 要注意这里锁定的对象是谁
+synchronized (this) {
+increase();
+}
+}
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+SyncBlockTest1 runnable = new SyncBlockTest1();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 必须使用同一个实例，才能达到同步效果
+threads[i] = new Thread(runnable);
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 期待的结果应该是（THREADS_COUNT * 10000）= 100000
+System.out.println("race = " + race + ", time: " + (System.currentTimeMillis() - start));
+}
+}
+运行结果：
+race = 100000, time: 29
+上例中，我们锁定了当前对象  则需要7行操作码）。
+// 使用一个长度为0的byte数组作为对象锁
+private byte[] lock = new byte[0];
+synchronized (lock) {
+increase();
+}
+使用同步代码块时，同样必须明确你的对象锁是谁，这样才能写出正确的使用逻辑。以上例来说，无论是 相关的，所以，为了达到同步效果，必须如下使用：
+SyncBlockTest1 runnable = new SyncBlockTest1();
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 必须使用同一个实例，才能达到同步效果
+threads[i] = new Thread(runnable);
+threads[i].start();
+}
+可如果你的使用方法如下，就失去了线程安全性：
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 每次都创建新的SyncStaticTest1实例，就会失去线程安全性
+threads[i] = new Thread(new SyncBlockTest1());
+threads[i].start();
+}
+此时，运行结果为：
+race = 62629, time: 7
+但如果你锁定的是类对象  ，那10个线程无论使用同一个实例还是各自使用不同的实例，都是安全的。
+// 锁定类对象
+synchronized (SyncStaticTest1.class) {
+increase();
+}
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+// 每次都创建新的SyncStaticTest1实例，仍然是线程安全的
+threads[i] = new Thread(new SyncBlockTest1());
+threads[i].start();
+}
+运行结果：
+race = 100000, time: 25
+综上分析， 有以下关键点需要记住：
+至此，synchronized的三种用法就说完了，可见，使用synchronized时，明确对象锁是非常重要的。另外，搞清楚了对象锁的相关知识后，就不难推断出以下2个等式：
+synchronized void method() {
+// method logic
+}
+等价于：
+void method() {
+synchronized(this) {
+// method logic
+}
+}
+static synchronized void method() {
+// method logic
+}
+等价于：
+static void method() {
+synchronized(TestClass.class) {
+// method logic
+}
+}
+除了synchronized关键字，JDK1.5中还新增了另外一种线程同步机制：Lock接口。来看看其接口定义：
+package java.util.concurrent.locks;
+import java.util.concurrent.TimeUnit;
+public interface Lock {
+void lock();
+void lockInterruptibly() throws InterruptedException;
+boolean tryLock();
+boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+void unlock();
+Condition newCondition();
+}
+获取普通锁，若锁已被获取，则只能等待，效果与synchronized相同。只不过lock后需要unlock。
+获取可中断锁，当两个线程同时通过  中断的，也就是说，只有处于等待状态的线程，才可以响应中断。
+尝试获取锁，如果获取成功返回true，反之立即返回false。此方法不会阻塞等待获取锁。
+等待time时间，如果在time时间内获取到锁返回true，如果阻塞等待time时间内没有获取到锁返回false。
+业务处理完毕，释放锁。
+创建一个Condition。Condition与Lock结合使用，可以达到synchronized与wait/notify/notifyAll结合使用时同样的线程等待与唤醒的效果，而且功能更强大。
+synchronized加解锁是自动的；而Lock需要手动加解锁，操作复杂，但更加灵活
+synchronized不可响应中断，一个线程获取不到锁就一直等待；而Lock可以响应中断
+synchronized无法实现公平锁；而Lock可以实现公平锁
+ReentrantLock是Lock的实现类。首先，看一个简单的售票程序：
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+/**
+* 同步安全测试
+*
+* 一个简单的售票程序，多线程同时售票时，会出现线程安全问题
+*/
+public class ReentrantLockTest1 {
+private static final int THREADS_COUNT = 3; // 线程数
+private static final int TICKETS_PER_THREAD = 5;    // 每个线程分配到的票数
+// 共享资源（临界资源）
+private int ticket = THREADS_COUNT * TICKETS_PER_THREAD;    // 总票数
+public void buyTicket() {
+try {
+if (ticket > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", bought ticket-" + ticket--);
+// 为了更容易出现安全问题，这里加一个短暂睡眠
+Thread.sleep(2);
+}
+} catch (Throwable t) {
+t.printStackTrace();
+}
+}
+public void readTicket() {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", tickets left: " + ticket);
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+final ReentrantLockTest1 instance = new ReentrantLockTest1();
+// 启动 THREADS_COUNT 个线程
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+threads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+// 每个线程可以卖 TICKETS_PER_THREAD 张票
+for (int j = 0; j < TICKETS_PER_THREAD; j++) {
+instance.buyTicket();
+}
+}
+});
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 读取剩余票数
+instance.readTicket();
+// 耗时
+System.out.println("time: " + (System.currentTimeMillis() - start));
+}
+}
+库存有15张票，同时启动3个线程出售，每个线程分配5张，线程安全时，结果应该是所有票正好都被卖掉，不多不少。然而，在没有任何同步措施的情况下，运行结果如下：
+Thread: Thread-0, bought ticket-15
+Thread: Thread-2, bought ticket-13
+Thread: Thread-1, bought ticket-14
+Thread: Thread-1, bought ticket-12
+Thread: Thread-2, bought ticket-11
+Thread: Thread-0, bought ticket-12
+Thread: Thread-2, bought ticket-10
+Thread: Thread-1, bought ticket-10
+Thread: Thread-0, bought ticket-9
+Thread: Thread-2, bought ticket-8
+Thread: Thread-1, bought ticket-7
+Thread: Thread-0, bought ticket-6
+Thread: Thread-0, bought ticket-5
+Thread: Thread-2, bought ticket-5
+Thread: Thread-1, bought ticket-4
+Thread: main, tickets left: 3
+time: 14
+可见，ticket-12、ticket-10、ticket-5均被售出了2次，而Ticket-1、Ticket-2、Ticket-3没有售出。
+下面是使用Lock的实现类  对上例做的改造：
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+import java.util.concurrent.locks.ReentrantLock;
+/**
+* 同步安全测试
+*
+* 演示ReentrantLock实现同步，以及公平锁与非公平锁
+*/
+public class ReentrantLockTest2 {
+private static final int THREADS_COUNT = 3; // 线程数
+private static final int TICKETS_PER_THREAD = 5;    // 每个线程分配到的票数
+// 共享资源（临界资源）
+private int ticket = THREADS_COUNT * TICKETS_PER_THREAD;    // 总票数
+private static final ReentrantLock lock;
+static {
+// 创建一个公平锁/非公平锁
+lock = new ReentrantLock(false);    // 修改参数，看看公平锁与非公平锁的差别
+}
+public void buyTicket() {
+try {
+lock.lock();
+if (ticket > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", bought ticket-" + ticket--);
+// 为了演示出公平锁与非公平锁的效果，这里加一个短暂睡眠，让其他线程获得一个等待时间
+Thread.sleep(2);
+}
+} catch (Throwable t) {
+t.printStackTrace();
+} finally {
+// unlock应该放在finally中，防止发生异常时来不及解锁
+lock.unlock();
+}
+}
+public void readTicket() {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", tickets left: " + ticket);
+}
+public static void main(String[] args) {
+long start = System.currentTimeMillis();
+final ReentrantLockTest2 instance = new ReentrantLockTest2();
+// 启动 THREADS_COUNT 个线程
+Thread[] threads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+threads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+// 每个线程可以卖 TICKETS_PER_THREAD 张票
+for (int j = 0; j < TICKETS_PER_THREAD; j++) {
+instance.buyTicket();
+}
+}
+});
+threads[i].start();
+}
+// 等待所有累加线程都结束
+while (Thread.activeCount() > 1) {
+Thread.yield();
+}
+// 读取剩余票数
+instance.readTicket();
+// 耗时
+System.out.println("time: " + (System.currentTimeMillis() - start));
+}
+}
+运行结果：
+Thread: Thread-0, bought ticket-15
+Thread: Thread-0, bought ticket-14
+Thread: Thread-0, bought ticket-13
+Thread: Thread-1, bought ticket-12
+Thread: Thread-1, bought ticket-11
+Thread: Thread-1, bought ticket-10
+Thread: Thread-1, bought ticket-9
+Thread: Thread-1, bought ticket-8
+Thread: Thread-2, bought ticket-7
+Thread: Thread-2, bought ticket-6
+Thread: Thread-2, bought ticket-5
+Thread: Thread-2, bought ticket-4
+Thread: Thread-2, bought ticket-3
+Thread: Thread-0, bought ticket-2
+Thread: Thread-0, bought ticket-1
+Thread: main, tickets left: 0
+time: 36
+可见，从 ticket-15 到 ticket-1 都被按顺序售出了，只不过每张票由哪条线程售出则存在不确定性。上述运行结果是使用  ，看看公平锁的运行效果：
+Thread: Thread-0, bought ticket-15
+Thread: Thread-1, bought ticket-14
+Thread: Thread-2, bought ticket-13
+Thread: Thread-0, bought ticket-12
+Thread: Thread-1, bought ticket-11
+Thread: Thread-2, bought ticket-10
+Thread: Thread-0, bought ticket-9
+Thread: Thread-1, bought ticket-8
+Thread: Thread-2, bought ticket-7
+Thread: Thread-0, bought ticket-6
+Thread: Thread-1, bought ticket-5
+Thread: Thread-2, bought ticket-4
+Thread: Thread-0, bought ticket-3
+Thread: Thread-1, bought ticket-2
+Thread: Thread-2, bought ticket-1
+Thread: main, tickets left: 0
+time: 47
+我们看到，在公平锁环境下，不仅ticket安全性得到保证，就连线程获得锁的顺序也得到了保证，以“Thread-0、1、2”的顺序循环执行。这里的“公平性”体现在哪里呢？通俗点说，就是，显然，这种”先到先得“的效果，用队列”先进先出“的特性实现最为合适。
+Java也确实是通过”等待队列“来实现”公平锁“的。所有等待锁的线程都会被挂起并且进入等待队列，当锁被释放后，系统只允许等待队列的头部线程被唤醒并获得锁。而”非公平锁“其实同样有这样一个队列，只不过当锁被释放后，系统并不会只从等待队列中获取头部线程，而是如果发现此时正好有一个还没进入等待队列的线程想要获取锁（此时该线程还未被挂起）时，则直接将锁给了它（公平性被打破），这条线程就可以直接执行，而不用进行状态切换，于是就省去了切换的开销，这也就是的原因所在。
+有了上述理解，我们就可以推断
+在Lock接口定义中，还定义了一个  方法，用于返回一个Condition。
+Condition与Lock结合起来使用，可以达到Object监视器方法（wait/notify/notifyAll）与synchronized结合起来使用时同样甚至更加强大的线程等待与唤醒效果。其中，Lock替代synchronized，Condition替代Object监视器方法。
+在Condition中，用await()替换wait()，用signal()替换notify()，用signalAll()替换notifyAll()。传统的线程间通信方式，Condition都能实现，需要注意的是，Condition是绑定在Lock上的，必须通过Lock对象的  方法获得。
+Condition的强大之处，在于它可以针对同一个lock对象，创建多个不同的Condition条件，以处理复杂的线程等待与唤醒场景。典型的例子就是“生产者-消费者”问题。生产者与消费者共用同一个固定大小的缓冲区，当缓冲区满了，生产者还想向其中添加数据时，就必须休眠，等待消费者取走一个或多个数据后再唤醒。同样，当缓冲区空了，消费者还想从中取走数据时，也要休眠，等待生产者向其中添加一个或多个数据后再唤醒。可见，。
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+/**
+* Condition测试
+*
+* 生产者-消费者问题
+*/
+public class ConditionTest {
+private static final int REPOSITORY_SIZE = 3;
+private static final int PRODUCT_COUNT = 10;
+public static void main(String[] args)  {
+// 创建一个容量为REPOSITORY_SIZE的仓库
+final Repository repository = new Repository(REPOSITORY_SIZE);
+Thread producer = new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < PRODUCT_COUNT; i++) {
+try {
+repository.put(Integer.valueOf(i));
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}) ;
+Thread consumer = new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < PRODUCT_COUNT; i++) {
+try {
+Object val = repository.take();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}) ;
+producer.start();
+consumer.start();
+}
+/**
+* Repository 是一个定长集合，当集合为空时，take方法需要等待，直到有元素时才返回元素
+* 当其中的元素数达到最大值时，put方法需要等待，直到元素被take之后才能继续put
+*/
+static class Repository {
+final Lock lock = new ReentrantLock();
+final Condition notFull = lock.newCondition();
+final Condition notEmpty = lock.newCondition();
+final Object[] items;
+int putIndex, takeIndex, count;
+public Repository(int size) {
+items = new Object[size];
+}
+public void put(Object x) throws InterruptedException {
+try {
+lock.lock();
+while (count == items.length) {
+System.out.println("Buffer full, please wait");
+// 开始等待库存不为满
+notFull.await();
+}
+// 生产一个产品
+items[putIndex] = x;
+// 增加当前库存量
+count++;
+System.out.println("Produce: " + x);
+if (++putIndex == items.length) {
+putIndex = 0;
+}
+// 通知消费者线程库存已经不为空了
+notEmpty.signal();
+} finally {
+lock.unlock();
+}
+}
+public Object take() throws InterruptedException {
+try {
+lock.lock();
+while (count == 0) {
+System.out.println("No element, please wait");
+// 开始等待库存不为空
+notEmpty.await();
+}
+// 消费一个产品
+Object x = items[takeIndex];
+// 减少当前库存量
+count--;
+System.out.println("Consume: " + x);
+if (++takeIndex == items.length) {
+takeIndex = 0;
+}
+// 通知生产者线程库存已经不为满了
+notFull.signal();
+return x;
+} finally {
+lock.unlock();
+}
+}
+}
+}
+运行结果：
+Produce: 0
+Produce: 1
+Produce: 2
+Buffer full, please wait
+Consume: 0
+Consume: 1
+Produce: 3
+Produce: 4
+Buffer full, please wait
+Consume: 2
+Consume: 3
+Consume: 4
+No element, please wait
+Produce: 5
+Produce: 6
+Produce: 7
+Buffer full, please wait
+Consume: 5
+Consume: 6
+Consume: 7
+No element, please wait
+Produce: 8
+Produce: 9
+Consume: 8
+Consume: 9
+ReadWriteLock也是一个接口，其优势是允许”读并发“，也就是”读写互斥，写写互斥，读读不互斥“。在多线程读的场景下，能极大的提高运算效率，提升服务器吞吐量。其接口定义很简单：
+package java.util.concurrent.locks;
+public interface ReadWriteLock {
+Lock readLock();
+Lock writeLock();
+}
+ReentrantReadWriteLock是读写锁的实现类。我们将售票程序做个简单的改造：
+package com.example.weishj.mytester.concurrency.sync.synchronizedtest;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+/**
+* 同步安全测试
+*
+* 演示ReentrantReadWriteLock实现同步，它的特点是"读并发"、"写互斥"、"读写互斥"
+*/
+public class ReentrantReadWriteLockTest1 {
+private static final int THREADS_COUNT = 3; // 线程数
+private static final int TICKETS_PER_THREAD = 4;    // 每个线程分配到的票数
+// 共享资源（临界资源）
+private int ticket = THREADS_COUNT * TICKETS_PER_THREAD;    // 总票数
+private static final ReadWriteLock lock;
+static {
+// 为了通过一个示例同时演示"读并发"、"写互斥"、"读写互斥"的效果，创建一个公平锁
+lock = new ReentrantReadWriteLock(false);   // 此处也说明读锁与写锁之间同样遵守公平性原则
+}
+public void buyTicket() {
+try {
+lock.writeLock().lock();
+if (ticket > 0) {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", bought ticket-" + ticket--);
+Thread.sleep(2);
+}
+} catch (Throwable t) {
+t.printStackTrace();
+} finally {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", unlocked write");
+lock.writeLock().unlock();
+}
+}
+public void readTicket() {
+try {
+lock.readLock().lock();
+System.out.println("Thread: " + Thread.currentThread().getName() + ", tickets left: " + ticket);
+Thread.sleep(5);
+} catch (Throwable t) {
+t.printStackTrace();
+} finally {
+System.out.println("Thread: " + Thread.currentThread().getName() + ", unlocked read");
+lock.readLock().unlock();
+}
+}
+public static void main(String[] args) {
+final ReentrantReadWriteLockTest1 instance = new ReentrantReadWriteLockTest1();
+// 启动 THREADS_COUNT 个线程
+Thread[] writeThreads = new Thread[THREADS_COUNT];
+for (int i = 0; i < THREADS_COUNT; i++) {
+writeThreads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+// 每个线程可以卖 TICKETS_PER_THREAD 张票
+for (int j = 0; j < TICKETS_PER_THREAD; j++) {
+instance.buyTicket();
+}
+}
+});
+writeThreads[i].start();
+}
+// 读取此时的剩余票数
+Thread[] readThreads = new Thread[2];
+for (int i = 0; i < 2; i++) {
+readThreads[i] = new Thread(new Runnable() {
+@Override
+public void run() {
+// 每个线程可以读 2 次剩余票数
+for (int j = 0; j < 2; j++) {
+instance.readTicket();
+}
+}
+});
+readThreads[i].start();
+}
+}
+}
+运行结果：
+Thread: Thread-0, bought ticket-12
+Thread: Thread-0, unlocked write
+Thread: Thread-0, bought ticket-11
+Thread: Thread-0, unlocked write
+Thread: Thread-0, bought ticket-10
+Thread: Thread-0, unlocked write
+Thread: Thread-0, bought ticket-9
+Thread: Thread-0, unlocked write
+Thread: Thread-1, bought ticket-8
+Thread: Thread-1, unlocked write
+Thread: Thread-1, bought ticket-7
+Thread: Thread-1, unlocked write
+Thread: Thread-1, bought ticket-6
+Thread: Thread-1, unlocked write
+Thread: Thread-1, bought ticket-5
+Thread: Thread-1, unlocked write
+Thread: Thread-2, bought ticket-4
+Thread: Thread-2, unlocked write
+Thread: Thread-2, bought ticket-3
+Thread: Thread-2, unlocked write
+Thread: Thread-2, bought ticket-2
+Thread: Thread-2, unlocked write
+Thread: Thread-2, bought ticket-1
+Thread: Thread-2, unlocked write
+Thread: Thread-3, tickets left: 0
+Thread: Thread-4, tickets left: 0
+Thread: Thread-3, unlocked read
+Thread: Thread-3, tickets left: 0
+Thread: Thread-4, unlocked read
+Thread: Thread-4, tickets left: 0
+Thread: Thread-3, unlocked read
+Thread: Thread-4, unlocked read
+上述结果是在”非公平锁“的环境下得到的，无论尝试运行多少次，2条读线程都是被放在3条写线程执行完毕后才开始执行，为了一次性验证所有结论，我们再换”公平锁“重新执行一次，结果如下：
+Thread: Thread-0, bought ticket-12
+Thread: Thread-0, unlocked write
+Thread: Thread-1, bought ticket-11
+Thread: Thread-1, unlocked write
+Thread: Thread-2, bought ticket-10
+Thread: Thread-2, unlocked write
+Thread: Thread-3, tickets left: 9
+Thread: Thread-4, tickets left: 9
+Thread: Thread-4, unlocked read
+Thread: Thread-3, unlocked read
+Thread: Thread-0, bought ticket-9
+Thread: Thread-0, unlocked write
+Thread: Thread-1, bought ticket-8
+Thread: Thread-1, unlocked write
+Thread: Thread-2, bought ticket-7
+Thread: Thread-2, unlocked write
+Thread: Thread-4, tickets left: 6
+Thread: Thread-3, tickets left: 6
+Thread: Thread-3, unlocked read
+Thread: Thread-4, unlocked read
+Thread: Thread-0, bought ticket-6
+Thread: Thread-0, unlocked write
+Thread: Thread-1, bought ticket-5
+Thread: Thread-1, unlocked write
+Thread: Thread-2, bought ticket-4
+Thread: Thread-2, unlocked write
+Thread: Thread-0, bought ticket-3
+Thread: Thread-0, unlocked write
+Thread: Thread-1, bought ticket-2
+Thread: Thread-1, unlocked write
+Thread: Thread-2, bought ticket-1
+Thread: Thread-2, unlocked write
+这次读线程就被穿插到写线程中间了，从上述结果中可以看到：

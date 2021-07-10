@@ -1,0 +1,253 @@
+[Qemu OpenChannelSSD] Basic I/O issues: Part1
+![s](
+今天继续liblightnvm，咱今天牛逼了，搞一下OCSSD的IO操作，具体也是一样，从tests里面的test_addr_io.c下手.
+最终调用的是
+void *nvm_buf_alloc(const struct nvm_geo *geo, size_t nbytes)
+{
+char *buf;
+int ret;
+if (!nbytes) {
+errno = EINVAL;
+return NULL;
+}
+ret = posix_memalign((void **)&buf, geo->sector_nbytes, nbytes);
+//拿到了一个'至少'nbytes字节的内存块，并且这块内存起始地址是geo->sector_nbytes的倍数.
+//至于为什么需要以geo->sector_nbytes大小对齐，我推测原因可能有2：
+//1.性能：读写时避免单次内存操作被拆成2次.
+//2.没有作对齐的内存块在Lightnvm内核进行I/O时可能会出错.
+if (ret) {
+errno = ret;
+return NULL;
+}
+return buf;
+}
+写入/读取的模式 : with or without meta ?
+写入/读取的模式 : plane access mode : Single-plane, Dual-plane or Quad-plane ?
+由于是NAND-Based Flash Mem，Write前需要先Erase. 而Erase的单位一般是Block.
+a. Erase:
+(1). 目前貌似Erase只能同时对一个lun上的所有plane进行擦除.(Test1)
+(2). 正如Paper上说的，write任意一个地址之前，如果这个地址被写过，需要先擦除再写入.(Test2)
+b. Write:
+(0). write/read的最小单元是sector.(实际上也是nvm_addr所能寻址的最小单元)
+c. Write/Read with meta. 这里的meta是啥东西？
+一个猜想：OCSSD里面一个(Update: 目前只能确定page，sector还不能确定)存储单元（storage unit）配套存在一个meta存储单元. 带外数据(out-of-bound data)可能指的就是这样的每个寻址单位其对应的一小块字节区.
+d. Access mode: Sngl/Dual/Quad
+一个猜想：由于之前推断出的结构，加上这个测试示范Dual和Quad 2个模式都是在nplane大于相应的个数时才做的（Dual：2， Quad：4），很可能这里的access mode是单次I/O同时发向不同的plane，可以使I/O并发.
+附：
+#include <liblightnvm.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+static char nvm_dev_path[NVM_DEV_PATH_LEN] = "/dev/nvme0n1";
+static struct nvm_dev *dev;
+static const struct nvm_geo *geo;
+static struct nvm_addr a0;
+static int channel = 0;
+static int lun = 0;
+static int plane = 0;
+static int block = 10;
+#define STRLEN 20
+static char Str[STRLEN] = "OCSSD Test";
+static void *Buf_for_read = NULL;
+#define FAIL_ERASE do{ printf("Erase Failed\n"); }while(0)
+#define FAIL_ALLOC do{ printf("Alloc Failed\n"); }while(0)
+#define FAIL_WRITE do{ printf("Write Failed\n"); }while(0)
+#define FAIL_READ  do{ printf("Read Failed\n"); }while(0)
+#define THE_SAME   do{ printf("Same\n"); }while(0)
+#define NOT_THE_SAME do{ printf("Not Same\n"); }while(0)
+int setup(void)
+{
+dev = nvm_dev_open(nvm_dev_path);
+if (!dev) {
+perror("nvm_dev_open");
+}
+geo = nvm_dev_get_geo(dev);
+a0.ppa = 0;
+a0.g.ch = channel;
+a0.g.lun = lun;
+a0.g.pl = plane;
+a0.g.blk = block;
+Buf_for_read =  nvm_buf_alloc(geo, geo->sector_nbytes);
+if (!Buf_for_read) {
+FAIL_ALLOC;
+return -1;
+}
+return 0;
+}
+int teardown(void)
+{
+nvm_dev_close(dev);
+if ( Buf_for_read ) {
+free(Buf_for_read);
+}
+return 0;
+}
+uint64_t alignblk(struct nvm_addr adr)
+{
+struct nvm_addr alg;
+alg.ppa = adr.ppa;
+alg.g.pg = 0;
+alg.g.sec = 0;
+return alg.ppa;
+}
+void EraseNpl_1Blk(struct nvm_addr wh)//
+{
+struct nvm_ret ret;
+ssize_t res;
+int pmode = NVM_FLAG_PMODE_SNGL;
+const int npl = geo->nplanes;
+struct nvm_addr whichblk[npl];
+for(int i = 0; i < npl; ++i){
+whichblk[i].ppa = alignblk(wh);
+whichblk[i].g.pl = i;
+}
+res = nvm_addr_erase(dev, whichblk, npl, pmode, &ret);//Erase 1 block of all planes inside a lun.
+if(res < 0){
+FAIL_ERASE;
+nvm_ret_pr(&ret);
+}
+}
+//pmode = Single-plane, without meta
+void Write_1Sector(struct nvm_addr wh)
+{
+struct nvm_ret ret;
+ssize_t res;
+int pmode = NVM_FLAG_PMODE_SNGL;
+void *bufptr = NULL;
+bufptr = nvm_buf_alloc(geo, geo->sector_nbytes);//sector size
+if(!bufptr){
+FAIL_ALLOC;
+goto OUT;
+}
+memcpy(bufptr, Str, STRLEN);
+//2. write
+res = nvm_addr_write(dev, &wh, 1, bufptr, NULL, pmode, &ret);//Write 1 sector
+if(res < 0){
+FAIL_WRITE;
+}
+free(bufptr);
+OUT:
+if(res < 0){
+nvm_ret_pr(&ret);
+}
+return;
+}
+void Read_1Sector(struct nvm_addr wh)
+{
+struct nvm_ret ret;
+ssize_t res;
+int pmode = NVM_FLAG_PMODE_SNGL;
+res = nvm_addr_read(dev, &wh, 1, Buf_for_read, NULL, pmode, &ret);
+if(res < 0){
+FAIL_READ;
+nvm_ret_pr(&ret);
+}
+}
+int MemCmp(unsigned char *a, unsigned char *b, int len)
+{
+for(int i = 0; i < len; ++i){
+if(a[i] != b[i]){
+return -1;
+}
+}
+return 0;
+}
+void test_basic(void);
+void test_write_no_erase(void)
+{
+struct nvm_addr addr;
+addr.ppa = a0.ppa;
+addr.g.pg = 1;
+addr.g.sec = 1; //same as test_basic()'s address
+printf("Before test: ");
+test_basic();
+printf("Run test: ");
+Write_1Sector(addr);
+}
+void test_erase_1pl_1blk(void)
+{
+struct nvm_addr addr;
+struct nvm_ret ret;
+ssize_t res;
+int pmode = NVM_FLAG_PMODE_SNGL;
+const int npl = geo->nplanes;
+struct nvm_addr whichblk[npl];
+addr.ppa = a0.ppa;
+for(int i = 0; i < npl; ++i){
+whichblk[i].ppa = alignblk(addr);
+whichblk[i].g.pl = i;
+}
+res = nvm_addr_erase(dev, whichblk, 1, pmode, &ret);//Erase 1 block of 1 planes inside a lun.
+if(res < 0){
+FAIL_ERASE;
+nvm_ret_pr(&ret);
+}
+}
+void test_basic(void)
+{
+struct nvm_addr addr;
+addr.ppa = a0.ppa;
+addr.g.pg = 1;
+addr.g.sec = 1;
+EraseNpl_1Blk(addr);
+Write_1Sector(addr);
+Read_1Sector(addr);
+if(0 == MemCmp(Str, Buf_for_read, strlen(Str))){
+THE_SAME;
+}else{
+NOT_THE_SAME;
+}
+}
+typedef void (* FuncType) (void);
+void RunTests()
+{
+FuncType tests[] = {
+test_basic,
+test_erase_1pl_1blk,
+test_write_no_erase
+};
+const char *teststr[] = {
+"test_basic",
+"test_erase_1pl_1blk",
+"test_write_no_erase"
+};
+for(int i = 0; i < 3; i++){
+printf("====Test %d====\n %s:\n", i, teststr[i]);
+tests[i]();
+}
+}
+int main()
+{
+if( setup() < 0){
+return -1;
+}
+RunTests();
+teardown();
+return 0;
+}
+Result:
+====Test 0====
+test_basic:
+Same
+====Test 1====
+test_erase_1pl_1blk:
+Erase Failed
+nvm_ret { result(0x2), status(0) }
+====Test 2====
+test_write_no_erase:
+Before test: Same
+Run test: Write Failed
+nvm_ret { result(0x2), status(0) }
+Qemu Output:
+lnvm: Erase not performed to all planes (1)
+Erased failed
+ppa:ch:0,lun:0,blk:10,pg:0,pl:0,sec:0
+Attempting to write to non erased block (172)
+lnvm: set written status failed
+ppa:ch:0,lun:0,blk:10,pg:1,pl:1,sec:0
+这个lib让使用qemu的用户可以直接通过nvme与OCSSD交互，不需要通过内核lightnvm模块的target（包括需要初始化（lnvm init）/生成一个target设备（lnvm create）等）
+我在测试write with meta时发现meta存在写入与读取不匹配的情况，后来看了一眼最新的qemu-nvme，发现这个bug已经在2天前的commit（3839a1f059fff）fix掉了. ～～～lucky! 改天可以分析一下这整个从用户态lib到kerne再到hardware（qemu）的流程。
+lightnvm: fix bad dma write on metadata
+[master](https://github.com/OpenChannelSSD/qemu-nvme)
+1 parent commit 3839a1f059fff1dd40d8696b8d12bdebe256112a
+Javier González committed 2 days ago

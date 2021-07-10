@@ -1,0 +1,12 @@
+Jet Brains Php Storm 基本配置
+准备：PHP Storm 、Xmapp
+1.分别安装俩款软件，Php Storm需激活，激活方法自行百度。
+2.运行Php Storm，打开Setting，依次点击Languages & Frameworks -> PHP -> 三个小点
+3.点 "+" 号，选择Local Path To InterPreter，点击 "三个小点",如图二、三所示
+图文说明2
+图文说明3
+4.选择Xmapp->php->php.exe，注意路径，每个人安装路径可能不一样。
+图文说明4
+图文说明5
+5.之后在图五界面点击刷新按钮刷新下确定即可。
+注：若新建项目调试时提示502、404、重新选择下PHP编译器，即图一里 CLI InterPreter的下拉列表里选择，然后确定即可

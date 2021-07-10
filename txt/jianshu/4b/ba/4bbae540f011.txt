@@ -1,0 +1,40 @@
+Chapter 5 Java中的锁（一）
+锁是用于控制多个线程访问共享资源的方式。一般来说，一个锁能够防止多个线程同一时间访问一个共享资源（但是有些锁可以允许多个线程并发的访问共享资源，比如读写锁）。
+Lock接口提供了与synchronized关键字类似的功能，只是在使用时需要显示的获取和释放锁。虽然它缺少了（synchronized块或方法所提供的）隐式获取和释放锁的便捷性，但是却拥有了锁获取与释放的可操作性，可中断的获取锁以及超时获取锁等synchronized关键字所不具备的同步特性。
+Lock接口的使用示例：
+Lock lock = new ReentrantLock();
+lock.lock();
+try{
+}finally{
+lock.unlock();
+}
+Lock 接口所提供的的synchronized关键字不具备的功能：
+（1）尝试非阻塞的获取锁。
+（2）能被中断地获取锁：与synchronized不同，当获取到锁的线程被中断时，中断异常将被抛出，同时锁被释放。
+（3）超时获取锁：如果在规定时间内无法获得锁，则及时返回。
+队列同步器AbstractQueuedSynchronizer，使用来构建锁或者其他同步组件的基础框架。
+同步器主要通过操作3个方法来对同步状态进行更改，getState（），setState（int newState），compareAndSet（int expected，intupdate）。这些方法能都保证状态的改变是安全的。
+同步器是实现锁（或任何其他同步组件）的关键，通常在锁的实现中聚合同步器，利用同步器来实现锁的语义。同步器简化了锁的实现，屏蔽了同步状态管理，线程的排队，等待与唤醒等底层操作。
+（1）队列同步器是基于模板方法模式的，也就是说，使用者需要继承同步器并重写指定的方法。
+同步器可重写的方法如下：
+（1）protected boolean tryAcquire（int arg）：独占式的获取同步状态，实现该方法需要判断同步状态是否符合预期，然后进行CAS设置同步状态。
+（2）protected boolean tryRelease（int arg）：独占式释放同步状态，等待获取同步状态的线程将有机会获取同步状态。
+（3）protected boolean tryAcquireShared（int arg）：共享式获取同步状态，返回大于0的值，表示获取成功，反之，获取失败。
+（4）protected boolean tryReleaseShared（int arg）：共享式释放同步状态
+（5）protected boolean isHeldExclusively（）：是否被当前线程独占
+同步器提供的模板方法：
+（1）void acquire（int arg）：独占式获取同步状态，如果当前线程获取同步状态成功，则由该方法返回，否则，线程进入同步队列等待，该方法会调用重写的tryAcquire方法。
+（2）void acquireInterruptibly（int arg）：与acquire（int arg）相同，但是该方法能够响应中断，如果当前线程被中断，则该方法会抛出InterruptedException并返回。
+（3）boolean tryAcquireNanos（int arg，long nanos）：在acquireInterruptibly（int arg）的基础上增加了超时限制，如果当前线程在超时时间内没有获取到同步状态，那么将返回false，否则返回true。
+（4）boolean release（int arg）：独占式释放同步状态，该方法会在释放同步状态之后，将同步状态中第一个节点包含的线程唤醒。
+（5）Collection<Thread> getQueuedThreads（）：获取等待在同步队列上的线程集合
+同步器提供的方法主要分为3类：独占式获取和释放同步状态，共享式获取和释放同步状态，查询同步队列中的等待线程情况。
+重入锁（ReentrantLock），就是支持重进入的锁，它表示该锁能够支持一个线程对资源的重复加锁。除此之外，该锁还支持获取锁时的公平和非公平性选择。
+synchronized关键字隐式的支持重进入。
+（1）公平锁：如果在绝对时间上，先对锁进行请求的锁先被满足，那么这个锁就是公平的，反之，就是不公平的。公平的获取锁，也就是等待时间最长的线程最优先获得锁，也可以说锁的获取是顺序的。
+（2）事实上，公平锁往往没有非公平锁的效率高（公平锁造成大量的线程切换开销），但是，公平锁能够减少“饥饿”发生的概率。
+（3）非公平锁虽然可能造成线程饥饿，但极少的线程切换，保证了其更大的吞吐量。
+ReentrantLock的实现：
+（1）nonfairTryAcquire：判断当前线程是否为获取锁的线程，如果是，则将同步状态的值增加并返回true。
+（2）tryRelease：如果该锁被获取了n次，那么前（n-1）次tryRelease方法必须返回flase，而只有同步状态最终被减为0的时候才能返回true。
+（3）公平锁的tryAcquire与nonfairTryAcquire唯一的区别就是，判断条件多了hasQueuedPredecessors（）方法，即加入了同步队列当前节点是否有前驱节点的判断，如果有的话，tryAcquire会返回false。

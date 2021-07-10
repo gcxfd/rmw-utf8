@@ -1,0 +1,339 @@
+Java并发编程之锁机制之AQS(AbstractQueuedSynchronizer)
+该文章属于《Java并发编程》系列文章，如果想了解更多，请点击《Java并发编程之总目录》
+在上篇文章与Condition来实现的。那下面我们就来具体了解AQS的内部细节与实现原理。
+PS:该篇文章会以来进行讲解，对AbstractQueuedLongSynchronizer有兴趣的小伙伴，可以自行查看相关资料。
+抽象队列同步器AbstractQueuedSynchronizer （以下都简称AQS），是用来构建锁或者其他同步组件的基础框架，它使用了一个int成员变量来表示同步状态，通过内置的FIFO(first-in-first-out)同步队列来控制获取共享资源的线程。
+该类被设计为大多数同步组件的基类，这些同步组件都依赖于单个原子值（int）来控制同步状态，子类必须要定义获取获取同步与释放状态的方法，在AQS中提供了三种方法来进行操作。同时子类应该为自定义同步组件的静态内部类，AQS自身没有实现任何同步接口，它仅仅是定义了若干同步状态获取和释放的方法来供自定义同步组件使用，同步器既可以支持独占式地获取同步状态，也可以支持共享式地获取同步状态，这样就可以方便实现不同类型的同步组件（ReentrantLock、ReentrantReadWriteLock和CountDownLatch等）。
+AQS的设计是基于模板方法模式的，也就是说，使用者需要继承同步器并重写指定的方法，随后将同步器组合在自定义同步组件的实现中，并调用同步器提供的模板方法，而这些模板方法将会调用使用者重写的方法。
+在子类实现自定义同步组件的时候，需要通过AQS提供的以下三个方法，来获取与释放同步状态。
+当我们实现自定义同步组件时，将会调用AQS对外提供的方法同步状态与释放的方法，当然这些方法内部会调用其子类的模板方法。这里将对外提供的方法分为了两类，具体如下所示：
+在了解了AQS中的针对不同方式获取与释放同步状态（）与修改同步状态的方法后，现在我们来了解AQS中具体的实现及其内部原理。
+在上文中我们提到AQS中主要通过一个FIFO(first-in-first-out)来控制线程的同步。那么在实际程序中，AQS会将获取同步状态的线程构造成一个Node节点，并将该节点加入到队列中。如果该线程获取同步状态失败会阻塞该线程，当同步状态释放时，会把头节点中的线程唤醒，使其尝试获取同步状态。
+下面我们就通过实际代码来了解Node节点中存储的信息。Node节点具体实现如下：
+static final class Node {
+volatile int waitStatus;
+volatile Node prev;
+volatile Node next;
+volatile Thread thread;
+Node nextWaiter;
+}
+Node节点是AQS中的)进行介绍。
+通过上文的描述我们大概了解了Node节点中存储的数据与信息，现在我们来看看整个AQS下同步队列的结构。具体如下图所示：
+在AQS中的同步队列中，分别有两个指针（你也可以叫做对象的引用），一个指针指向队列中的尾节点。
+当一个线程成功获取了同步状态（或者锁），其他线程无法获取到同步状态，这个时候会将该线程构造成Node节点，并加入到同步队列中，而这个加入队列的过程必须要确保线程安全，所以在AQS中提供了一个基于CAS的设置尾节点的方法：，它需要传递当前线程“认为”的尾节点和当前节点，只有设置成功后，当前节点才正式与之前的尾节点建立关联。具体过程如下图所示：
+上图中，虚线部分为之前tail指向的节点。
+在AQS中的同步队列中，头节点是获取同步状态成功的节点，头节点的线程会在释放同步状态时，将会唤醒其下一个节点，而下一个节点会在获取同步状态成功时将自己设置为头节点，具体过程如下图所示：
+上图中，。因为设置头节点是获取同步状态成功的线程来完成的，由于只有一个线程能够成功获取到同步状态，因此设置头节点的方法并不需要CAS来进行保证，只需要将原头节点的next指向断开就行了。
+现在我们已经了解了AQS中同步队列的头节点与尾节点的设置过程。现在我们根据实际代码进行分析，因为涉及到不同状态对同步状态的获取()，所以下面会分别对这两种状态进行讲解。
+通过方法我们可以获取到同步状态，但是需要注意的是该方法并不会响应线程的中断与获取同步状态的超时机制。同时即使当前线程已经中断了，通过该方法放入的同步队列的Node节点（该线程构造的Node），也不会从同步队列中移除。具体代码如下所示：
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+在该方法中，主要通过来获取同步状态，如果获取同步状态失败，则会将请求线程构造独占式Node节点（Node.EXCLUSIVE），同时将该线程加入同步队列的尾部（因为AQS中的队列是FIFO类型）。接着我们查看addWaiter(Node mode)方法具体细节：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);//将该线程构造成Node节点
+Node pred = tail;
+if (pred != null) {//尝试将尾指针 tail 指向当前线程构造的Node节点
+node.prev = pred;
+if (compareAndSetTail(pred, node)) {
+//如果成功，那么将尾指针之前指向的节点的next指向 当前线程构造的Node节点
+pred.next = node;
+return node;
+}
+}
+enq(node);//如果当前尾指针为null,则调用enq(final Node node)方法
+return node;
+}
+在该方法中，主要分为两个步骤：
+接下来我们继续查看enq(final Node node)方法。
+private Node enq(final Node node) {
+for (;;) {
+Node t = tail;
+if (t == null) {//如果当前尾指针为null,那么尝试将头指针 head指向当前线程构造的Node节点
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {//如果当前尾指针（tail)不为null，那么尝试将尾指针 tail 指向当前线程构造的Node节点
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+在enq(final Node node)方法中，通过
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();//获取该节点的上一节点
+//如果上一节点是head锁指向的节点，且该节点获取同步状态成功
+if (p == head && tryAcquire(arg)) {
+//设置head指向该节点，
+setHead(node);
+p.next = null; // 将上一节点的next指向断开
+failed = false;
+return interrupted;
+}
+//判断获取同步状态失败的线程是否需要阻塞
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())//阻塞并判断当前线程是否已经中断了
+interrupted = true;
+}
+} finally {
+if (failed)
+//如果线程中断了，那么就将该线程从同步队列中移除，同时唤醒下一节点
+cancelAcquire(node);
+}
+}
+在该方法中主要分为三个步骤:
+下面我们接着来看方法，看看具体的阻塞具体逻辑，代码如下所示：
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+//上一节点已经设置状态请求释放信号，因此当前节点可以安全地阻塞
+return true;
+if (ws > 0) {
+//上一节点，已经被中断或者超时，那么接跳过所有状态为Node.CANCELLED
+do {
+node.prev = pred = pred.prev;
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+//其他状态，则调用cas操作设置状态为Node.SINGAL
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+在该方法中会获取上一节点的状态，然后进行下面的三个步骤的判断。
+当时，接着会调用parkAndCheckInterrupt（）方法来阻塞当前线程。该方法的返回值为当前线程是否中断。
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+在该方法中，主要阻塞线程的方法是通过LockSupport（在后面的文章中会具体介绍）的park来阻塞当前线程。
+通过对独占式获取同步状态的理解，我们知道 acquireQueued(final Node node, int arg)方法中最终会执行方法将取消该线程的状态获取并唤醒下一个线程节点。那么接下来我们来看看该方法的具体实现。具体代码如下：
+private void cancelAcquire(Node node) {
+//如果当前节点已经不存在直接返回
+if (node == null)
+return;
+//（1）将该节点对应的线程置为null
+node.thread = null;
+//（2）跳过当前节点之前已经取消的节点
+Node pred = node.prev;
+while (pred.waitStatus > 0)
+node.prev = pred = pred.prev;
+//获取在（2）操作之后，节点的下一个节点
+Node predNext = pred.next;
+//（3）将当前中断的线程对应节点状态设置为CANCELLED
+node.waitStatus = Node.CANCELLED;
+//（4）如果当前中断的节点是尾节点，那么则将尾节点重新指向
+if (node == tail && compareAndSetTail(node, pred)) {
+compareAndSetNext(pred, predNext, null);
+} else {
+//（5）如果中断的节点的上一个节点的状态，为SINGAL或者即将为SINGAL，
+//那么将该当前中断节点移除
+int ws;
+if (pred != head &&
+((ws = pred.waitStatus) == Node.SIGNAL ||
+(ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
+pred.thread != null) {
+Node next = node.next;
+if (next != null && next.waitStatus <= 0)
+compareAndSetNext(pred, predNext, next);
+} else {
+unparkSuccessor(node);//（6）将该节点移除，同时唤醒下一个节点
+}
+node.next = node; // help GC
+}
+}
+观察上诉代码，我们可以知道该方法干了以下这几件事
+（1）将中断线程对应的节点对应的线程置为null
+（2）跳过当前节点之前已经取消的节点（我们已经知道在Node.waitStatus的枚举中，只有CANCELLED 大于0 ）
+（3）将当前中断的线程对应节点状态设置为CANCELLED
+，那么通过CAS操作将尾节点指向（2）操作后的的节点。
+private void unparkSuccessor(Node node) {
+//重置该节点为初始状态
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+//获取中断节点的下一节点
+Node s = node.next;
+//判断下一节点的状态，如果为Node.CANCELED状态
+if (s == null || s.waitStatus > 0) {
+s = null;
+//则通过尾节点向前遍历，获取最近的waitStatus<=0的节点
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+//如果该节点不会null，则唤醒该节点中的线程。
+if (s != null)
+LockSupport.unpark(s.thread);
+}
+这里为了方便大家理解，我还是将图补充了出来，（图片有可能不是很清晰，建议大家点击浏览大图）
+整体来说，方法主要是获取中断节点后的可用节点（Node.waitStatus<=0),然后将该节点对应的线程唤醒。
+当线程获取同步状态成功并执行相应逻辑后，需要释放同步状态，使得后继线程节点能够继续获取同步状态，通过调用AQS的relase(int arg)方法，可以释放同步状态。具体代码如下：
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+在该方法中，会调用模板方法。关于unparkSuccessor(Node node)方法，上文已经分析过了，这里就不再进行描述了。
+共享式获取与独占式获取最主要的区别在于，写操作要求对资源的独占式访问，而读操作可以是共享访问的。
+在了解了共享式同步状态获取与独占式获取同步状态的区别后，现在我们来看一看共享式获取的相关方法。在AQS中通过 acquireShared(int arg)方法来实现的。具体代码如下：
+public final void acquireShared(int arg) {
+if (tryAcquireShared(arg) < 0)
+doAcquireShared(arg);
+}
+在该方法内部会调用模板方法方法具体实现如下所示：
+private void doAcquireShared(int arg) {
+//（1）添加共享式节点在AQS中FIFO队列中
+final Node node = addWaiter(Node.SHARED);
+boolean failed = true;
+try {
+boolean interrupted = false;
+//(2)自旋获取同步状态
+for (;;) {
+final Node p = node.predecessor();
+if (p == head) {
+int r = tryAcquireShared(arg);
+if (r >= 0) {
+//当获取同步状态成功后，设置head指针
+setHeadAndPropagate(node, r);
+p.next = null; // help GC
+if (interrupted)
+selfInterrupt();
+failed = false;
+return;
+}
+}
+//(3)判断线程是否需要阻塞
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+//(4)如果线程已经中断，则唤醒下一节点
+if (failed)
+cancelAcquire(node);
+}
+}
+整体来看，共享式获取的逻辑与独占式获取的逻辑几乎一样，还是以下几个步骤：
+前面我们提到了，共享式与独占式获取同步状态的主要不同在于。具体代码如下：
+private void setHeadAndPropagate(Node node, int propagate) {
+//(1)设置head 指针，指向该节点
+Node h = head; // Record old head for check below
+setHead(node);
+//(2)判断是否执行doReleaseShared();
+if (propagate > 0 || h == null || h.waitStatus < 0 ||
+(h = head) == null || h.waitStatus < 0) {
+Node s = node.next;
+//如果当前节点的下一节点是共享式获取同步状态节点，则调用doReleaseShared（）方法
+if (s == null || s.isShared())
+doReleaseShared();
+}
+}
+在setHeadAndPropagate(Node node, int propagate)方法中有两个参数。
+（中文意思，繁殖、传播）是共享式获取同步状态线程节点的个数。
+其主要逻辑步骤分为以下两个步骤：
+//在共享式访问中，当前节点为SHARED类型
+final Node node = addWaiter(Node.SHARED);
+//在调用addWaiter 内部会调用Node构造方法，其中会将nextWaiter设置为Node.SHARED。
+Node(Thread thread, Node mode) {     // Used by addWaiter
+this.nextWaiter = mode;
+this.thread = thread;
+}
+//SHARED为Node类静态类
+final boolean isShared() {
+return nextWaiter == SHARED;
+}
+下面我们继续查看方法的具体实现，具体代码如下所示：
+private void doReleaseShared() {
+for (;;) {
+Node h = head;
+if (h != null && h != tail) {
+int ws = h.waitStatus;
+if (ws == Node.SIGNAL) {
+//(1)从上图中，我们可以得知在共享式的同步队列中，如果存在堵塞节点，
+//那么head所指向的节点状态肯定为Node.SINGAL,
+//通过CAS操作将head所指向的节点状态设置为初始状态，如果成功就唤醒head下一个阻塞的线程
+if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
+continue;            // loop to recheck cases
+unparkSuccessor(h);//唤醒下一节点线程，上文分析过该方法，这里就不在讲了
+}
+//(2)表示该节点线程已经获取共享状态成功,则通过CAS操作将该线程节点状态设置为Node.PROPAGATE
+//从上图中，我们可以得知在共享式的同步队列中，
+else if (ws == 0 &&
+!compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
+continue;                // loop on failed CAS
+}
+if (h == head)                   //如果head指针发生改变一直循环，否则跳出循环
+break;
+}
+}
+从代码中我们可以看出该方法主要分为两个步骤：
+当线程获取同步状态成功并执行相应逻辑后，需要释放同步状态，使得后继线程节点能够继续获取同步状态，通过调用AQS的releaseShared(int arg)方法，可以释放同步状态。具体代码如下：
+public final boolean releaseShared(int arg) {
+if (tryReleaseShared(arg)) {
+doReleaseShared();
+return true;
+}
+return false;
+}
+因为独占式与共享式超时获取同步状态，与其本身的非超时获取同步状态逻辑几乎一样。所以下面就以独占式超时获取同步状态的相应逻辑进行讲解。
+在独占式超时获取同步状态中，会调用），具体代码如下所示：
+public final boolean tryAcquireNanos(int arg, long nanosTimeout)
+throws InterruptedException {
+if (Thread.interrupted())
+throw new InterruptedException();
+return tryAcquire(arg) ||
+doAcquireNanos(arg, nanosTimeout);
+}
+观察代码，我们可以得知如果当前线程已经中断，会方法来超时获取同步状态。那下面我们接着来看该方法具体代码实现，代码如下图所示：
+private boolean doAcquireNanos(int arg, long nanosTimeout)
+throws InterruptedException {
+if (nanosTimeout <= 0L)
+return false;
+//(1)计算超时等待的结束时间
+final long deadline = System.nanoTime() + nanosTimeout;
+final Node node = addWaiter(Node.EXCLUSIVE);
+boolean failed = true;
+try {
+for (;;) {
+final Node p = node.predecessor();
+//(2)如果获取同步状态成功，直接返回
+if (p == head && tryAcquire(arg)) {
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return true;
+}
+//如果获取同步状态失败，计算的剩下的时间
+nanosTimeout = deadline - System.nanoTime();
+//(3)如果超时直接退出
+if (nanosTimeout <= 0L)
+return false;
+//(4)如果没有超时，且nanosTimeout大于spinForTimeoutThreshold（1000纳秒）时，
+//则让线程等待nanosTimeout （剩下的时间，单位：纳秒。）
+if (shouldParkAfterFailedAcquire(p, node) &&
+nanosTimeout > spinForTimeoutThreshold)
+LockSupport.parkNanos(this, nanosTimeout);
+//(5)如果当前线程被中断，直接抛出异常
+if (Thread.interrupted())
+throw new InterruptedException();
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+整个方法为以下几个步骤：
+到现在我们基本了解了整个AQS的内部结构与其独占式与共享式获取同步状态的实现，但是其中涉及到的线程的阻塞、等待、唤醒（与LockSupport工具类相关）相关知识点我们都没有具体介绍，后续的文章会对进行介绍。希望大家继续保持着学习的动力~~。

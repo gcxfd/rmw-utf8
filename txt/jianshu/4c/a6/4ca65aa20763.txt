@@ -1,0 +1,298 @@
+ReentrantLock源码分析
+ReentranLock从字面上理解就是可重入锁，它支持同一个线程对资源的重复加锁，也是我们平时在处理java并发情况下用的最多的同步组件之一（还有volatile,synchronized等）。
+一般ReentrantLock的使用方式如下：
+public class LockDemo {
+private Lock lock = new ReentrantLock();
+private int cnt = 0;
+public void setCnt(){
+lock.lock();
+try{
+//..........
+cnt++;
+//..........
+} finally {
+lock.unlock();
+}
+}
+}
+要了解一个类的功能，从它的内部方法与成员变量看起。
+ReentranLock是通过Sync及其子类来实现的同步控制。也就是说ReentrantLock的同步功能是由Sync代理的。同时，ReentranLock也是通过FairSync与NonfairSync来支持ReentranLock在获取锁时的公平与非公平性选择。实际上，JavaDoc里对Sync的解释已经很清楚了。
+/**
+* Base of synchronization control for this lock. Subclassed
+* into fair and nonfair versions below. Uses AQS state to
+* represent the number of holds on the lock.
+*/
+abstract static class Sync extends AbstractQueuedSynchronizer
+公平锁与非公平锁的区别：
+我们可以沿着ReentrantLock的调用链来简单分析下公平锁与非公平锁的实现区别。
+首先，ReentrantLock会调用lock方法，该方法只是简单的调用成员变量sync的lock方法。
+public void lock() {
+sync.lock();
+}
+在这里，由于sync的不同，会出现分支，FairSync与NonfairSync都有自己的分支。默认情况下，ReentrantLock是非公平锁，而为了使用公平锁，可以在初始化ReentrantLock时传入参数进行选择。
+public ReentrantLock(boolean fair) {
+sync = fair ? new FairSync() : new NonfairSync();
+}
+我们先看一下非公平锁的分支：
+final void lock() {
+if (compareAndSetState(0, 1))
+setExclusiveOwnerThread(Thread.currentThread());
+else
+acquire(1);
+}
+先是直接尝试通过CAS原子的设置state变量[如果state变量为0则将其设置为1，设置成功表明当前线程成功获取了锁]，成功后设置当前线程为锁的持有者，否则继续调用AbstractQueuedSynchronizer的acquire方法。
+而对于公平锁来说，十分简单，直接调用AbstractQueuedSynchronizer的acquire方法。
+final void lock() {
+acquire(1);
+}
+FairSync与NonfairSync在acquire方法方法出汇合。继续追踪AbstractQueuedSynchronizer的acquire方法：
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+该方法的基本逻辑是：先调用tryAcquire方法尝试获取锁，如果失败，会构造一个独占的Node节点加入等待队列。对于tryAcquire方法，基于FairSync与NonfairSync又有两种实现。对于非公平锁，会执行该方法：
+final boolean nonfairTryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();//获取状态变量
+if (c == 0) {//表明没有线程占有该同步状态
+if (compareAndSetState(0, acquires)) {//以原子方式设置该同步状态
+setExclusiveOwnerThread(current);//该线程拥有该FairSync同步状态
+return true;
+}
+}
+else if (current == getExclusiveOwnerThread()) {//当前线程已经拥有该同步状态
+int nextc = c + acquires;
+if (nextc < 0) // overflow
+throw new Error("Maximum lock count exceeded");
+setState(nextc);//重复设置状态变量（锁的可重入特性）
+return true;
+}
+return false;
+}
+而对于公平锁，该方法则是这样：
+protected final boolean tryAcquire(int acquires) {
+final Thread current = Thread.currentThread();
+int c = getState();
+if (c == 0) {
+//先判断该线程节点是否是队列的头结点
+//是则以原子方式设置同步状态，获取锁
+//否则失败返回
+if (!hasQueuedPredecessors() &&
+compareAndSetState(0, acquires)) {
+setExclusiveOwnerThread(current);
+return true;
+}
+}
+else if (current == getExclusiveOwnerThread()) {//重入
+int nextc = c + acquires;
+if (nextc < 0)
+throw new Error("Maximum lock count exceeded");
+setState(nextc);
+return true;
+}
+return false;
+}
+ReentrantLock调用unlock方法：
+public void unlock() {
+sync.release(1);//每次调用unlock方法，只对state变量减1操作，所以多次加锁后需要多次解锁
+}
+由sync调用release方法释放锁。
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);//唤醒头结点的后继节点
+return true;
+}
+return false;
+}
+protected final boolean tryRelease(int releases) {
+int c = getState() - releases;
+if (Thread.currentThread() != getExclusiveOwnerThread())
+throw new IllegalMonitorStateException();
+boolean free = false;
+if (c == 0) {
+free = true;
+setExclusiveOwnerThread(null);//state减为0，表明目前没有线程持有该锁
+}
+setState(c);
+return free;
+}
+我们可以观察到，对AQS的state成员变量的操作都是不用加锁的,原因在于state是一个volatile变量，可以从语言层面保持改变量在线程间的可见性。
+private volatile int state;
+protected final int getState() {
+return state;
+}
+到了这里，我们可以总结一下公平锁与非公平锁的实现差别了：
+总结：
+在前面沿着ReentrantLock的调用链来分析公平锁与非公平锁的实现时，我们发现ReentrantLock的很多工作最终都是由AbstractQueuedSynchronizer类（以后称AQS）完成的，比如FIFO同步队列的管理操作、同步状态变量的设置、CAS操作等都是由AQS完成的，AQS可以说是ReentrantLock实现同步功能的最基础的框架类（其实，通过分析JDK中concurrent包里提供的其它同步工具，我们会发现它们基本都把同步工作交给了AQS称它为基础框架类并不为过）。下面我们就通过源码的分析来了解AQS是如何做到这些工作的。
+首先，我们可以看一下，所有的Sync都是继承自AQS的。
+abstract static class Sync extends AbstractQueuedSynchronizer
+这一系列Sync类的继承关系如图 ：
+AQS里的方法特别多，我们从AQS的几个重要的成员变量看起，下图是AQS的Outline，红框标记的head,tail两个Node节点，根据前面的了解，我们马上就能联想到，这就是AQS管理的FIFO等待队列，用来处理获取锁状态失败的线程-获取锁状态失败的线程会被放入该队列，等待再次尝试获取锁。而state成员变量，代表着锁的同步状态，一个线程成功获得锁，这个行为的实质就是该线程成功的设置了state变量的状态。
+下面我们详细分析一下AQS是如何管理等待队列的。
+首先，我们要看一下Node节点这个数据结构是如何的，因为正是它构成了AQS的等待队列。Node主要有一下几个成员变量：
+static final class Node {
+volatile int waitStatus;
+volatile Node prev;
+volatile Node next;
+volatile Thread thread;
+//......
+}
+简单分析一下，一个waitStatus表示Node节点的一些状态，pre/next表示该队列是由双向链表组成，thread表示是该线程入队等待获取锁。对于waitStatus，该Node节点规定了6中状态。
+根据AQS中的 acquire方法，没有成功获取同步状态的线程会被加入同步等待队列的尾部。具体步骤是：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {
+node.prev = pred;
+//CAS方式设置队列的尾节点
+//成功则设置该节点前、后向指针
+if (compareAndSetTail(pred, node)) {
+pred.next = node;
+return node;
+}
+}
+enq(node);//CAS方式设置等待队列尾节点失败
+return node;
+}
+//入队
+private Node enq(final Node node) {
+for (;;) {//自旋CAS设置尾节点
+Node t = tail;
+if (t == null) { // Must initialize
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+//自旋起点
+for (;;) {
+final Node p = node.predecessor();
+//新节点的前驱节点是队列的头结点且尝试获取同步状态
+if (p == head && tryAcquire(arg)) {
+//成功则当前节点设置为头结点
+setHead(node);
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+//当前线程休眠
+parkAndCheckInterrupt())
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+//判断node节点关联的线程是否可以阻塞，判断标准就是node的前置节点pred是否处于SIGNAL状态
+//如果是，则当前节点node可以睡眠等待前置节点线程释放锁来唤醒自己（unparking）
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+int ws = pred.waitStatus;
+if (ws == Node.SIGNAL)
+/*
+* This node has already set status asking a release
+* to signal it, so it can safely park.
+*/
+return true;
+if (ws > 0) {
+/*
+* Predecessor was cancelled. Skip over predecessors and
+* indicate retry.node
+*/
+do {
+node.prev = pred = pred.prev;//节点的前置节点处于cancel状态，需要循环跳过这些节点
+} while (pred.waitStatus > 0);
+pred.next = node;
+} else {
+/*
+* waitStatus must be 0 or PROPAGATE.  Indicate that we
+* need a signal, but don't park yet.  Caller will need to
+* retry to make sure it cannot acquire before parking.
+*/
+compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+}
+return false;
+}
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+//该方法会是当前线程暂时不被调度，直到发生三种情况：
+//1.别的线程对该线程调用unpark操作
+//2.别的线程终端该线程
+//3.莫名返回
+public static void park(Object blocker) {
+Thread t = Thread.currentThread();
+setBlocker(t, blocker);
+unsafe.park(false, 0L);//调用native方法park阻塞当前线程
+setBlocker(t, null);
+}
+/**
+* Block current thread, returning when a balancing
+* <tt>unpark</tt> occurs, or a balancing <tt>unpark</tt> has
+* already occurred, or the thread is interrupted, or, if not
+* absolute and time is not zero, the given time nanoseconds have
+* elapsed, or if absolute, the given deadline in milliseconds
+* since Epoch has passed, or spuriously (i.e., returning for no
+* "reason"). Note: This operation is in the Unsafe class only
+* because <tt>unpark</tt> is, so it would be strange to place it
+* elsewhere.
+*/
+public native void park(boolean isAbsolute, long time);
+根据上面的源码分析，我们可以画出AQS独占式获取同步状态的流程（即acquire方法的流程）
+public final boolean release(int arg) {
+//tryRelease方法修改同步变量，直至state为0表明现在没有线程占有同步状态
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+//唤醒头结点的后继节点
+private void unparkSuccessor(Node node) {
+/*
+* If status is negative (i.e., possibly needing signal) try
+* to clear in anticipation of signalling.  It is OK if this
+* fails or if status is changed by waiting thread.
+*/
+int ws = node.waitStatus;
+if (ws < 0)
+compareAndSetWaitStatus(node, ws, 0);
+/*
+* Thread to unpark is held in successor, which is normally
+* just the next node.  But if cancelled or apparently null,
+* traverse backwards from tail to find the actual
+* non-cancelled successor.
+*/
+Node s = node.next;//后继节点
+if (s == null || s.waitStatus > 0) {
+s = null;
+for (Node t = tail; t != null && t != node; t = t.prev)
+if (t.waitStatus <= 0)
+s = t;
+}
+if (s != null)
+LockSupport.unpark(s.thread);//唤醒后继节点线程
+}
+public static void unpark(Thread thread) {
+if (thread != null)
+unsafe.unpark(thread);
+}
+通过对AQS的源码分析，我们发现，对于同步队列，每一个节点之间是没有感知的，每个线程在尝试获取同步状态失败后，都会走一遍独占式获取同步状态的流程（见图2-1），包括加入队列尾部，进入等待状态，或者被前驱唤醒等，各个队列节点的独立工作，构成了多线程争抢设置AQS同步状态的场景，获得AQS的同步状态就代表着线程获取了锁，这就是AQS的终极奥秘。。。

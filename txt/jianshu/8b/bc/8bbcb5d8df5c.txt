@@ -1,0 +1,6 @@
+Windos下安装pyspider报错:Please specify --curl-dir=/path/to/built/libcurl解决办法
+windowns下安装pyspider报 "Please specify --curl-dir=/path/to/built/libcurl"错误解决办法是到这个网址:
+使用关键字就好了.然后点击下载对应的版本就好了.我的是pyhon3
+选择
+我的是在h盘,你需要更改成你自己的文件所在的目录.
+安装成功后,再安装 ,就可以了.

@@ -1,0 +1,10 @@
+使用批处理提取文件夹下所有文本文件最后一行
+windows下要提取文件夹下所有文本文件的最后一行到一个文件中，行前面加上待提取文本的文件名，可新建bat文件，写入以下批处理代码
+@echo off
+set blank=
+setlocal enabledelayedexpansion
+for /f %%i in ('dir /b^|find /v "bat"') do (
+for /f "tokens=*" %%j in (%%i) do (set a=%%j)
+echo %%~ni%blank%!a!>>New.txt)
+pause
+其中 find /v “bat”是把当前的bat文件排除；%%~ni是文件名；%blank%是空格，第二行的“=”后有一空格。

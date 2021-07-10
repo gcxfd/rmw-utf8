@@ -1,0 +1,29 @@
+Lock中的AQS、独占锁、重入锁、读锁、写锁、Condition源码分析
+除去使用 synchronized 隐式加锁的方式外，我们可以使用 Lock 更加灵活的控制加锁、解锁、等待和唤醒等操作
+Java 中的 Lock 有如下几种实现
+不论是重入锁还是读写锁，他们都是通过 AQS（AbstractQueuedSynchronizer）来实现的，并发包作者（Doug Lea）期望 AQS 作为一个构建所或者实现其它自定义同步组件的基础框架
+理解 AQS 对理解锁来说至关重要，我们先来利用 AQS 来实现一个自定义的同步组件独占锁
+public class Mutex implements Lock {    private final Sync sync = new Sync();    @Override    public void lock() {        sync.acquire(1);    }    @Override    public void lockInterruptibly() throws InterruptedException {        sync.acquireInterruptibly(1);    }    @Override    public boolean tryLock() {        return sync.tryAcquire(1);    }    @Override    public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {        return sync.tryAcquireNanos(1, unit.toNanos(time));    }    @Override    public void unlock() {        sync.release(1);    }    @Override    public Condition newCondition() {        return sync.newCondition();    }    private static class Sync extends AbstractQueuedSynchronizer {        @Override        protected boolean tryAcquire(int arg) {            if (compareAndSetState(0, 1)) {                setExclusiveOwnerThread(Thread.currentThread());                return true;            }            return false;        }        @Override        protected boolean tryRelease(int arg) {            if (getState() == 0) {                throw new IllegalMonitorStateException();            }            setExclusiveOwnerThread(null);            setState(0);            return true;        }        @Override        protected boolean isHeldExclusively() {            return getState() == 1;        }        Condition newCondition() {            return new ConditionObject();        }    }}
+整体调用逻辑如下
+调用 lock() 的时候，首先会去调用 acquire() 方法
+如果 tryAcquire() 获取锁成功这里使用的是 CAS 获取锁并且直接返回成功或者失败，如果获取成功了方法返回，线程持有锁成功，否则就会调用 addWaiter() 将当前线程构造成功 Waiter 结点，放入同步队列中，同步队列是一个 FIFO 的队列，所以说新来的结点要放入尾部
+然后调用 acquireQueued() 方法尝试将该节点挂起或者从队列中取出首结点然后再尝试调用 tryAcquire() 获取同步状态，如果获取成功了那么从同步队列中移除，如下图 2，如果不是头结点这线程挂起进入等待状态，直到线程被中断或者被唤醒为止再次进行头结点和获取锁的逻辑，需要注意的是每次判断的是当前节点的前一个节点，后续方便 setHead() 设置当前节点
+解锁过程
+调用 tryRelease()，这个方法将 state 设置为 0 并且将锁所属于的线程置位 null，这里没有使用 CAS 因为释放锁的时候，线程是获取到锁的状态不会存在竞争
+以上对 AQS 的部分功能接口做了讲解，后面结合其它锁会逐步展开剩下的点
+ReentrantLock 有两种实现分别是
+在创建 ReentrantLock(true) 就可以创建公平锁的实现，在其内部指定了内部的 AQS 使用 FairSync
+public ReentrantLock(boolean fair) {        sync = fair ? new FairSync() : new NonfairSync();    }
+上述逻辑都是整理源码罗列出来的逻辑和我们之前的独占锁的区别主要在于，同一个线程可以多次获取锁 state 会依次增加代表了重入的次数。
+释放锁的时候必须是当前线程，减少锁持有的次数为 0 的话就完全释放，将锁所属于的线程设置为 null
+非公平锁比公平锁的实现简单了许多而且性能也好了很多，区别主要在于
+其它基本都是相似的
+我们知道 AQS 是一个 FIFO 队列，从中唤醒的都是有先后顺序的，同时在这种情况下又多了操作就是由于线程是可以重入的，那么在这种情况下，同一个线程可能会连续的持有锁，导致处于等待中的队列等待更久，比如如下代码每个线程获取锁 2 次，启动了多个任务
+读写锁用一个值维护读和写锁，用高 16 位表示读状态，用低 16 位表示写状态
+总结一下：
+一个锁可以持有一个同步队列，多个 Condition，每个 Condition 上存在多个等待结点
+当调用 await() 的时候就会构造对应的结点，首先从同步队列头部移除结点，然后释放锁，然后放入 Condition 列表尾部
+当调用 singal() 的时候就会从 Condition 等待队列中移除放入同步队列的尾部
+参考：
+作者：在江湖中coding
+链接：

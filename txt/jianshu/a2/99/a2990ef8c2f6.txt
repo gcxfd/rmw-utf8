@@ -1,0 +1,340 @@
+2018-01-21
+1. 一、框架概述
+2. 课程概述
+laravel 4天（之前TP框架还是很大的区别）（国外框架）
+在线教育平台 6天（laravel熟悉+插件+开发模式）
+dedecms 二次开发
+CI框架
+2.1. 1、什么是框架？
+框架是许多代码的集合，为项目开发提供了很多基础性的代码。例如常见的参数过滤，DB类的封装、文件上传类，图片处理类，验证码类等等。程序员只需要将重心放置到业务逻辑的实现，加快开发的速度。
+一个项目 = 功能性代码(框架提供) + 业务逻辑(自己编写)
+什么是MVC的开发思想？
+M 是 Model的简写，负责业务数据处理。
+V 是 View的简写，负责显示数据和收集数据。
+C 是Controller的简写，负责协调（调度）左右。
+问题：
+在MVC设计思想里面，哪一个是最重要的？
+答：M最重要，数据的处理。（MVC 首当其冲是M）
+在MVC设计思想里面，和用户直接产生关联的是哪一个？答：C 控制器，地址栏 url地址----》模块下控制器下方法方法（逻辑判断 1. 载入视图 get 2. 实例化模型post）
+在MVC里面如果没有V视图层的参数，是否可以正常显示数据？
+答：MCT开发思想。（T template模板）可以
+html 可以直接 echo "html标签";  $html = <<
+html代码
+HTML;
+为什么要使用MVC开发思想？
+现在更多的是个人开发为主，但是实际工作开发肯定是团队合作为主。必然沟通的问题，协调的问题。主要是为了团队的协作。统一的规范进行开发，后期容易整合。最后的维护是容易。
+2.2. 2、为什么要使用框架?(面试)
+代码重用，很多通用的代码可以复用，例如做参数过滤，可以封装成一个函数 I('get.id', 0, 'intval')
+开发者只需要关注业务代码，不需要关注框架底层代码实现，例如数据库的操作
+原生：insert into sh_goods values(xx..x...) mysql mysqli pdo....
+框架：D("Goods")->add(I('post.'))
+代码量变少了，开发速度快，开发周期短（40-60%）
+开发规范比较统一，例如函数和类的命名，方便团队协作
+原生：user.php aaaa.php  bbbbb.php afsdaf.php
+框架：UserController.class.php
+后期的维护更加方便，同时功能模块的扩展也变得容易
+弊端：使用框架劣势？
+答：凡事都有两面性。
+限制人的思维（必须按照框架的规则来做事）条条框框多（学习成本）（排斥新东西）
+兼容性（新版本升级）（TP3.2经典  php7新特性，TP5里面写的写法，PHP7里面的特性全部发挥）（TP5使用很多）（TP5里面的大部分的单字母函数全部废弃 I( ) C()）（面试：问题 会TP5？）
+框架本身有性能消耗（为了解决开放性的问题，不得已要做很多的兼容性的处理）（开发优先、性能优先）laravel开发优先（运维：很少在程序上面出现性能问题、IO操作：mysql数据库---》memcache内存缓存、Redis....）
+laravel运行效率低（所有PHP框架里面允许效率最低）
+.......
+3、PHP中的主流框架
+Zend Framework（俗称zf框架）
+php语言公司官方（zend公司）开发的框架，重量级框架；因为官方开发，所以需要考虑的方面很全面，导致框架整体很臃肿。
+YII（个人产品）
+中文叫做易框架，重量级框架，美籍华人薛强进行开发的框架。最大的特点就是组件化、代码复用。（不太适合新手进行使用，里面的设计模式、OOP概念理解很深、外贸电商使用的比较多）不建议：HTML代码，建议HTML代码全部使用PHP的类库进行输出。$form
+= new FormActive(); $form->open('post', 'url'....)很前端jQuery很紧密。
+最先在YII里面提出代码的复用性的体现，为了减少重复性代码的开发。研发了一个叫做GII的模块，也叫作代码生成器、也叫作脚手架，主要是做辅助性的开发，用户只需要输入一下表名，即可生成对应curd相关的代码文件。这个东西太好用了，所以很多框架争相模仿，我们今天学习laravel也提供了类似的工具，叫做 artisan命令工具，有了它可以非常快速的生成一些基础性的代码，例如控制器的生成、模型的生成等等......
+php artisan make:controller UserController
+php artisan make:model User
+基本上所有的开发：
+商品模块、会员模块.....
+控制器(curd操作)
+模型（自动验证、自动完成....）
+三个静态页（add\edt\lst）
+处理：
+输入：sh_admin;
+生成：五个文件....
+Symfony2（企业使用较多，大企业使用的偏多）
+重量级框架，国外框架。由于symfony框架开发的思想太超前了，以至于在很早之前引入很多新的好的特性。后面很多的其他的产品都借鉴了该框架的特性，出来了很多的衍生产品，例如我们今天学习
+laravel框架，就是symfony的儿子（IOC容器）；同时还有YII框架里面也借鉴了symfony里面的特性（事件模型编程、javascript事件编程）。
+最后还有一点需要注意，symfony框架是很早之前就和composer进行默契的配合。同时symfony框架的底层的模板引擎使用的是 twig 模板引擎。
+Laravel（重点）
+目前是一个非常火的非常火的重路由的框架。需要注意该框架是基于Symfony框架的（Symfony 底层使用composer这个类库管理软件）。在学习laravel之前还要学习一下composer这个软件。
+Codelgniter （小型）
+CI框架，轻量级框架，国外框架（个人开发的产品，全国使用量，很多人喜欢将该框架作为基础性的框架，然后在该框架上加入自己的代码进行封装），市场上有一定的应用。显著的特点：按需加载。
+ThinkPHP
+ThinkPHP是一个叫做刘晨的中国人开发的国产框架。有中文官网、中文帮助文档、中文社区，以及丰富的百度搜索资源。所以ThinkPHP很适合作为入门级的开发框架（学习成本是最低）。
+下面的介绍的框架都是C语言编写的框架，是说这个框架本身是用C语言进行编写，但是编写完成之后，将它进行编译成一个 dll（Windows动态链接库文件）（php_yaf.dll），然后在php.ini文件进行引入。
+yaf框架
+Yaf，全称 Yet Another Framework，是由鸟哥（惠新宸）使用C语言进行开发的一个高性能的可以作为PHP扩展出现的框架。（Yaf_Abstarct）
+除了原生PHP的写法 yaf框架的性能是最好的。
+phalcon框架(国外)
+Phalcon 是开源、全功能栈、使用 C 扩展编写、针对高性能优化的 PHP 5 框架。 开发者不需要学习和使用 C 语言的功能，
+因为所有的功能都以 PHP 类的方式暴露出来，可以直接使用。 Phalcon
+也是松耦合的，可以根据项目的需要任意使用其他对象。Phalcon是一套实现MVC架构的高性能PHP应用程序框架。（文档很少）性能是仅此于yaf。
+php框架性能：
+php原生开发（目前很多公司）> yaf框架（PHP的扩展出现，常驻内存）>Phalcon> CI框架 > TP|YII > laravel > zf|symfony...
+思考：
+laravel为什么会在国内流行？
+出现的时机是最合适的。
+代码相对来说写起来简洁，用很少的代码可以完全多一些。
+laravel设计思想就很超前，其他的框架没有及时去运用PHP最新的特性。并且laravel借鉴了很多其他的编程语言的特性，例如Java、ruby。
+扩展性很好（设计模式）。
+和composer有很好的配合，互利共赢。（百度：composer里面提供的类库大部分是支持laravel）
+最后laravel对前端款框架支持也非常友好 laravel + vuejs
+.....
+3.1. 4、ORM机制
+什么是ORM机制？object relationship model 对象关系模型。由于现在开发的主流的思想是面向对象实现（OOP），面向对象的主体是对象。既然面向对象可以很好的去解决现实的问题。
+是否可以使用该思想来去操作数据库。数据库的操作习惯使用结构化的查询语句 （SQL 第四代编程语言 select * from user where id = 1）（AI：程序员不值钱，电脑编程 美国：机器人炒股）。
+是否可以使用面向对象方式去操作数据库？可以、映射关系
+模型类(UserModel)                                      表(sh_user) [行和列]
+对象($userModel = new UserModel())        表中记录[一行]
+属性($userModel->username)                   表中字段(username、password)
+方法 （$userModel->select()|find()|upate()|add()）  记录的操作（curd）
+3.2. 5、ORM的实现
+既然ORM是一种思想，是一种解决问题的方式。属于一种抽象的行为。那么应该想办法去实现该思想。实现的方式有很多种：
+AR模式（Active Record TP里面使用该方式实现）
+$userModel = D('User'); // 模型类 sh_user;
+$userModel->username = 'andy';
+$userModel->password = md5('admin88');
+$userModel->add();
+eloquentORM机制（laravel里面的实现）
+medoo机制（yaf框架里面有教，yaf框架里面是没有模型层，模型自己实现 pdo功能已经足够强大）..............
+了解：面向过程、OOP编程、AOP编程【面向切面编程】、面向组件编程....
+4. 二、laravel框架
+4.1. 1、laravel简介
+laravel是目前一个比较主流的框架，现在很多互联网的公司基本都在使用该框架。该框架是基于symfony【国外一款非常流行的框架：由于国内手册不是很齐全，没有多少公司使用】的一个国外的MVC框架。
+官网：
+国内访问地址：
+中文社区网站：
+4.2. 2、开发环境要求
+laravel框架有运行对环境是有严格要求的。（在Windows下建议使用集成开发环境phpstudy这个产品，目前还支持php7，并且可以非常方便的做版本切换。）
+注意：如果要使用PHPstudy，则必须先关闭之前的wamp环境（例如Apache、MySQL服务）
+注意：安装的过程中出现vc库找不到，使用下面的方式进行处理
+4.3. 3、laravel安装方式简介
+使用专业的软件 composer 软件，可以帮我们自动去互联网下载开发过程中所需要的类库文件和Linux下包管理器yum比较类似，和node.js里面npm ，也和前端里面bower相似。
+简介：
+国外镜像：
+国内镜像：
+很多其他的语言都有对应的包管理器，但是唯独PHP里面开启是没有的，这个时候就有人提出一种思想，把所有的PHP常见的类库（上传、图片处理、分页类）统一放在一个PHP应用商店。然后使用一定的工具进行管理，例如下载、更新.....
+而这这样的管理工具就是要学习的composer管理工具。
+使用手工安装，需要自己去下载laravel的框架的源码。
+4.4. 4、composer安装laravel
+在安装之前，先配置一下composer使用国内的镜像源（只要使用一次即可）
+composer config -g repo.packagist composer
+命令行执行如下的命令
+composer create-project laravel/laravel=5.1.*  local.laravel51.com   --prefer-dist
+安装后的界面：
+4.5. 5、启动laravel项目
+laravel官方提供一个叫做artisan的脚本，可以帮我们快速的完成一些事情，例如启动项目，生成控制器文件，模型文件..........
+可以执行如下命名的时候，必须是在laravel项目的根目录
+php artisan serve
+浏览器效果：
+4.6. 6、手工安装laravel
+将下载的文件复制到虚拟主机目录
+在Apache的配置文件配置一个虚拟主机【注意，需要指向 public目录下】
+DocumentRoot "C:\phpStudy\WWW\laravel.dev\public"
+ServerName laravel51.dev
+ServerAlias phpStudy.net
+Options FollowSymLinks ExecCGI
+AllowOverride All
+Order allow,deny
+Allow from all
+Require all granted
+配置hosts文件
+127.0.0.1 laravel51.dev
+浏览器访问效果
+4.7. 7、laravel目录结构分析
+4.7.1. 整体目录
+4.7.2. app目录
+4.7.3. http目录
+4.7.4. config目录
+config目录：主要是存放配置文件信息，laravel的配置信息是分文件保存的。
+4.7.5. database目录
+database目录：数据迁移和种子文件。
+例如某个数据迁移文件：在项目开发和测试阶段使用的较多，上线之后基本不用。
+4.7.6. public目录
+public目录：单入口和系统的静态资源（css、img、js、uploads）
+4.7.7. resource目录
+resources目录：存放视图文件。
+4.7.8. storage目录
+storage目录：主要是存放缓存文件和日志文件，需要注意：如果是在Linux环境下，该目录需要有可写的权限
+4.7.9. vendor目录
+vendor目录：主要是存放第三方的类库文件，laravel思想主要是共同的开发，不要重复的造轮子（例如：里面可能存在验证码类、上传类、邮件类），还需要注意该目录还存放laravel框架的源码。注意：如果使用的composer软件管理的，composer下载的类库都是存放在该目录下的。
+4.7.10. .env文件
+.env文件：主要是设置一些系统相关的环境配置文件信息。config目录里面的文件配置内容一般都是读取该文件里面的配置信息（config里面的配置项的值基本都是来自.env文件）。
+5. 三、laravel入门使用
+5.1. 1、路由简介
+因为laravel是一个重路由的框架。
+5.1.1. 什么是路由？
+答：路由就是用户在地址栏里面输入一个url地址后，交给后端的那个控制器下的那个方法进行处理的规则。一般我们需要在专门的路由文件里面，进行定义好。
+5.1.2. 为什么要使用路由？
+答：laravel里面路由。最新的 TP5里面也是存在路由。
+好处：
+url地址变得非常的美观。（以前没有路由都是通过伪静态处理）
+隐藏网站的目录结构（t.cn/goods/index.php ?）(index.php?m=Home&c=User&a=lst)
+防范网络攻击.....
+5.1.3. 路由文件在哪里，以及规则如何编写？
+5.2. 2、路由入门使用
+// laravel内置了一个Route类，提供了很多方法 一般是根据http的请求来命名
+// 例如： 1. get 2. post 3. any 4. match .....
+// get方法是处理 get请求 第一个参数：代表是请求的url地址的uri部分
+// 第二个参数：1. 匿名函数 2. 字符串（控制器下的某个方法）
+// 1. 匿名函数 返回值作为http的响应返回给浏览器
+// 2. 控制器里面的方法执行作为响应
+// url：http://local.laravel51.com/
+Route::get('/', function () {
+return 'hello';
+// return view('welcome');
+});
+// url：http://local.laravel51.com/about
+Route::get('/about', function () {
+return 'about';
+// return view('welcome');
+});
+5.3. 3、视图使用
+5.3.1. 视图载入
+学习：
+视图写在哪里？
+视图文件如何命名？
+视图里面的内容和编写？
+视图是否可以分目录管理？
+视图如何被载入？
+如何视图赋值？
+效果：
+5.4. 4、blade模板引擎
+5.4.1. 截图
+在routes.php里面定义一个/user/login路由
+建立 login.blade.php视图文件
+在routes.php里面定义一个/blade路由
+建立 show.blade.php视图文件
+注意：laravel模板引擎和 vuejs的冲突解决
+5.4.2. 代码
+5.4.2.1. routes.php路由文件
+/*
+|--------------------------------------------------------------------------
+| Application Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register all of the routes for an application.
+| It's a breeze. Simply tell Laravel the URIs it should respond to
+| and give it the controller to call when that URI is requested.
+|
+*/
+// laravel内置了一个Route类，提供了很多方法 一般是根据http的请求来命名 例如： 1. get 2. post 3. any 4. match .....
+// get方法是处理 get请求 第一个参数：代表是请求的url地址的uri部分 第二个参数： 1. 匿名函数 2. 字符串（控制器下的某个方法）
+// url：http://local.laravel51.com/
+// 1. 匿名函数 返回值作为http的响应返回给浏览器
+// 2. 控制器里面的方法执行
+Route::get('/', function () {
+return 'hello';
+// return view('welcome');
+});
+// url：http://local.laravel51.com/about
+Route::get('/about', function () {
+return 'about';
+// return view('welcome');
+});
+// 1. 视图写哪里？ 2. 视图文件名如何命名  3. 视图里面内容 4. 视图是否可以分目录管理 5. 视图如何被载入 6. 如何视图赋值
+// url：http://local.laravel51.com/user/login
+Route::get('/user/login', function () {
+// view() 函数是用于载入视图的 视图写在哪里？ 如何命名？
+// /resources/views/视图文件名称.blade.php  文件的后缀 .blade.php必须这样，因为laravel内部使用的一个模板：blade
+$info = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quod consequatur nisi excepturi debitis mollitia autem quis dolores error nulla, ea cumque vero quas beatae eveniet molestias expedita cupiditate. Itaque, culpa!'; // 赋值
+$title = 'Lorem ipsum dolor sit amet, consectetur.';
+// 两种方式：
+// with 第一个参数是视图调用名称 第二个参数变量信息
+// 第二种： 直接给view函数传递第二个参数，关联数组，key视图调用名称 value变量信息
+$key = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Officiis alias assumenda dolorum vel animi quo mollitia possimus neque quod illum!';
+$age = 12;
+// 复合数据类型 [] 数组 php5.4语法
+$userData = [
+['id' => 1, 'username' => 'Lorem ipsum dolor sit amet, consectetur adipisicing.'],
+['id' => 2, 'username' => 'Lorem ipsum dolor sit.'],
+['id' => 3, 'username' => 'ruby'],
+];
+// 通过赋值操作可以在视图里面显示数据信息，但是通过第二种方式写起来还是很麻烦。 key value key value
+/*    return view('home.user.login', ['key' => $key, 'age' => $age, 'userData' => $userData])
+->with('info', $info)
+->with('title', $title);
+*/    // 文件夹的分隔符使用的 /  laravel建议使用 .
+// 赋值简化操作
+// compact('info', 'title', 'key', 'age', 'userData') 可以将数据转换为 关键数组 参数：是变量名
+return view('home.user.login', compact('info', 'title', 'key', 'age', 'userData'));
+});
+// 视图里面的模板引擎 blade 1. 基本数据输出 2. 复合数据类型输出 3. 逻辑判断
+Route::get('/blade', function ()
+{
+$title = '模板引擎';
+$userData = [
+['id' => 1, 'username' => 'Lorem ipsum dolor sit amet, consectetur adipisicing.'],
+['id' => 2, 'username' => 'Lorem ipsum dolor sit.'],
+['id' => 3, 'username' => 'ruby'],
+];
+$isBoolean = false;
+$info = '这个是真的！';
+return view('show', compact('title', 'userData', 'info', 'isBoolean'));
+});
+5.4.2.2. show.blade.php视图文件
+blade模板引擎
+{{-- 短标记语法PHP --}}
+{{-- 这两个大括号被叫做 插值表达式，计算内部的表达式，最终的结果放置在这里 --}}
+{{-- vuejs 也是使用的插值表达式 --}}
+{{ $title }}
+{{  1 + 1 }}
+{{  3 * 8 }}
+{{ !false }}
+{{-- 三目运算 --}}
+{{ 1 > 2 ? '假的' : '真的' }}
+@foreach ($userData as $v)
+@endforeach
+@if ( $isBoolean )
+{{  $info }}
+@endif
+@if ( $isBoolean )
+这个是真的...........
+@else
+假的的...........
+@endif
+{{-- 问题： laravel和 vue 相遇了  --}}
+{{-- 不想让 laravel进行解析，前端vuejs 在浏览器里面解析 --}}
+{{-- vuejs 前端MVVM框架 --}}
+@{{  msg }}
+new Vue({
+el: '#box',
+data: {
+'msg' : 'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Sint, distinctio doloremque assumenda dicta veritatis repellendus maxime ut commodi ipsum necessitatibus ullam nihil! Saepe ab labore aliquam facilis placeat id incidunt.'
+}
+});
+5.4.2.3. login.blade.php视图文件
+user-login页面
+{{ time() }}
+用户名：
+密码：
+5.5. 4、控制器使用
+通过上面的操作，我们发现基本将代码都写在routes.php路由文件，这样不利于后期的开发和维护。一般会将用户的请求交给控制器下的某个方法来处理。在方法里面完成业务逻辑。
+思考：
+控制器写在哪里？
+控制器文件名如何命名？
+控制器里面的内容如何编写？
+控制器里面如何载入视图？
+控制器里面如何赋值？
+控制器里面的方法如何被调用？
+如何在控制器里面实例化模型？
+如何通过模型获取数据？
+5.6. 5、artisan命令-控制器
+5.7. 使用 artisan 命令生成控制器的默认行为
+效果：
+代码内容：
+5.8. 使用 artisan 命令生成控制器的不要带方法
+代码内容：
+5.9. 使用 artisan 命令生成控制器的分目录管理
+代码内容：
+6. 常见错误
+6.1. 加密密钥生成
+解决：
+6.2. 404错误
+如果没有在路由文件里面定义路由规则，直接请求，会提示如下的信息：

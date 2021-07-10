@@ -1,0 +1,583 @@
+Javascript常用的数组方法
+Javascript有很多数组的方法，有的人有W3C的API，还可以去MDN上去找，但是我觉得API上说的不全，MDN上又太多。。其实常用的就那几个，很多都可以用那几个方法解出来。
+很多方法中有兼容性的，在使用的时候，把兼容代码复制粘贴即可。
+先贴上来数组和字符串的方法的比较，我在学习的时候也是会混。所以做了小总结。之后就是数组方法和一些实例。如果有侧边栏就好了，看得就比较清楚。
+数组             字符串
+slice        |  slice  substring       截取需要开始和结束index的
+splice      |  substr                          截取需要开始index和截取长度的
+concat     |  concat                        都是连接，一个是连接数组，一个是连接字符串
+indexOf   |  indexOf                     搜索元素在不在里面，返回index值或者-1
+join          |   split                          这就是两个反义词啊，相互转化的利器
+其中字符串的slice 和 substring 是要开始和结束的索引，substr 是要开始索引和长度
+数组的slice是要开始和结束索引，但是splice是要开始索引和长度
+其中indexOf是返回索引，charAt是返回索引对应的值，charCodeAt是返回对应值的ASCII码值。
+其中foreach开始就停不下来，全部遍历。every遍历一个就判断一下，true就继续遍历下一个，false就跳出。map就是边遍历边运算。some返回的是布尔值，符合就是true，不符合就是false。filter返回的是符合元素组成的数组。
+移除数组元素，前面shift，后面pop
+join是数组转字符串，split是字符串转数组
+Array.prototype 属性表示构造函数的原型，并允许您向所有Array对象添加新的属性和方法。
+/*
+如果JavaScript本身不提供 first() 方法，
+添加一个返回数组的第一个元素的新方法。
+*/
+if(!Array.prototype.first) {
+Array.prototype.first = function() {
+return this[0];
+}
+}
+Array.prototype本身也是一个 Array
+Array.isArray(Array.prototype);
+// true
+//属性
+Array.prototype.constructor
+//所有的数组实例都继承了这个属性，它的值就是 Array，表明了所有的数组都是由 Array 构造出来的。
+Array.prototype.length
+//上面说了，因为 Array.prototype 也是个数组，所以它也有 length 属性，这个值为 0，因为它是个空数组。
+静态方法，是数组构造函数的方法
+obj是需要检测的值，如果是数组，返回true，否则返回false
+// 下面的函数调用都返回 true
+Array.isArray([]);
+Array.isArray([1]);
+Array.isArray(new Array());
+// 鲜为人知的事实：其实 Array.prototype 也是一个数组。
+Array.isArray(Array.prototype);
+// 下面的函数调用都返回 false
+Array.isArray();
+Array.isArray({});
+Array.isArray(null);
+Array.isArray(undefined);
+Array.isArray(17);
+Array.isArray('Array');
+Array.isArray(true);
+Array.isArray(false);
+Array.isArray({ __proto__: Array.prototype });
+存在兼容问题(IE8及以下不支持)
+//Polyfill
+//假如不存在 Array.isArray()，则在其他代码之前运行下面的代码将创建该方法。
+if (!Array.isArray) {
+Array.isArray = function(arg) {
+return Object.prototype.toString.call(arg) === '[object Array]';
+};
+}
+​
+console.log(obj instanceof Array);
+（不严谨）多个页面进行判断，会有问题
+//iframe
+/*B页面嵌套到A页面中，每个页面都有一个top属性，top属性一直都指向A页面的window，所以在A页面定义的函数fn，暴露在B页面的全局环境中，在B页面中也可以调用。*/
+top.fn(); //(就是调用页面A的fn函数)
+//那么问题来了：
+B页面：  top.fn([]);
+A页面：  function fn(arr){
+console.log(arr instanceof Array);
+}  //此时会成为false
+//要直接访问A页面，访问B页面会报错，因为只打开的页面的top指向自己的window，此时调用了没有定义的函数。
+//防止被嵌套：if( top != window){
+top.location.href = ‘inner-B.html’;} //跳转到自己的地址
+数组的length属性总是比数组中定义的最后一个元素的下标大一，表示数组中元素的个数。
+数组的length属性在创建数组的时候初始化，在添加新元素的时候数组长度改变
+//如果函数中没有参数，a为空数组
+var a = new Array();   // a.length 被初始化为 0
+//如果函数参数是一个，参数表示函数的长度
+var b = new Array(10); // b.length 被初始化为 10
+//如果函数参数是两个及以上，参数表示数组内容
+var c = new Array("one", "two", "three");  // c.length 被初始化为 3
+c[3] = "four";        // c.length 被更新为 4
+c[10] = "blastoff";   // c.length 变为 11
+设置属性length的值可以改变数组的大小，设置值小则被从后截断，设置值大则剩下的值都为undefined
+var a = new Array("one", "two", "three");
+a.length = 2;  //["one", "two"]
+a.length = 5;  //["one", "two", undefined × 3]
+​
+遍历数组，能够将数组转化为一个新的数组，新数组的值由map方法回调函数的返回值决定。
+回调函数的第一个参数是数组的值，第二个参数是索引,第三个参数是被调用的数组。thisArg可选，执行 callback函数时 使用的this值。
+如果 thisArg 参数有值，则每次 callback 函数被调用的时候，this都会指向thisArg参数上的这个对象。如果省略了 thisArg参数,或者赋值为null或undefined，则 this 指向全局对象 。
+返回值是新的数组
+var arrNew = arr.map(function(value,index){
+console.log(‘索引是’+index+”,内容是：”+value+);
+})
+let numbers = [1, 5, 10, 15];
+let roots = numbers.map(function(x) {
+return x * 2;
+});
+// roots is now [2, 10, 20, 30]
+// numbers is still [1, 5, 10, 15]
+求数组中每个元素的平方根
+var numbers = [1, 4, 9];
+var roots = numbers.map(Math.sqrt);
+/* roots的值为[1, 2, 3], numbers的值仍为[1, 4, 9] */
+使用 map 重新格式化数组中的对象
+var kvArray = [{key:1, value:10},
+{key:2, value:20},
+{key:3, value: 30}];
+var reformattedArray = kvArray.map(function(obj){
+//obj指的是每一个数组元素，是一个对象
+var rObj = {};
+rObj[obj.key] = obj.value;
+return rObj;
+});
+// reformattedArray is now [{1:10}, {2:20}, {3:30}],
+// kvArray is still [{key:1, value:10}, {key:2, value:20}, {key:3, value: 30}]
+将数组中的单词转换成对应的复数形式
+var words = ["foot", "goose", "moose", "kangaroo"];
+//定义函数
+function fuzzyPlural(single) {
+//所有的o变成e
+var result = single.replace(/o/g, 'e');
+if( single === 'kangaroo'){
+result += 'se';
+}
+return result;
+}
+//遍历每一个元素
+console.log(words.map(fuzzyPlural));
+// ["feet", "geese", "meese", "kangareese"]
+如何让一个string使用map方法获取字符串中每个字符所对应的ASCII码组成的数组
+var map = Array.prototype.map
+var a = map.call("Hello World", function(x) {
+return x.charCodeAt(0);
+})
+// a的值为[72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]
+如何遍历querySelectorAll得到动态对象集合
+var elems = document.querySelectorAll('select option:checked');
+var values = Array.prototype.map.call(elems, function(obj) {
+return obj.value;
+});
+反转字符串
+var str = '12345';
+Array.prototype.map.call(str, function(x) {
+return x;
+}).reverse().join('');
+// Output: '54321'
+parseInt等有多个参数的函数要注意
+var a = ['1','2','3'];
+var b = a.map(function(x){
+return parseInt(x);
+}); //[1,2,3]
+// 下面的语句返回什么呢:
+["1", "2", "3"].map(parseInt);
+// 你可能觉的会是[1, 2, 3]
+// 但实际的结果是 [1, NaN, NaN]
+//parseInt有两个参数，第二个数是进制数
+//所以以上函数主要执行的是
+var a  = ['1','2','3'];
+var b = a.map(function(ele,index,array){
+return parseInt(ele,index);
+//第三个参数parseInt会忽视, 但第二个参数不会
+// parseInt把传过来的索引值当成进制数来使用
+//而第二个参数假如经过 Number 函数转换后为 0 或 NaN，则将会忽略
+//parseInt(1,0);       1
+//parseInt(2,1);       NaN
+//parseInt(3,2);       NaN
+})
+//解决如下
+function returnInt(element){
+return parseInt(element,10);
+}
+["1", "2", "3"].map(returnInt);
+// 返回[1,2,3]
+兼容问题  IE8及以下不支持
+// 实现 ECMA-262, Edition 5, 15.4.4.19
+// 参考: http://es5.github.com/#x15.4.4.19
+// 兼容代码
+if (!Array.prototype.map) {
+Array.prototype.map = function(callback, thisArg) {
+var T, A, k;
+if (this == null) {
+throw new TypeError(" this is null or not defined");
+}
+// 1. 将O赋值为调用map方法的数组.
+var O = Object(this);
+// 2.将len赋值为数组O的长度.
+var len = O.length >>> 0;
+// 3.如果callback不是函数,则抛出TypeError异常.
+if (Object.prototype.toString.call(callback) != "[object Function]") {
+throw new TypeError(callback + " is not a function");
+}
+// 4. 如果参数thisArg有值,则将T赋值为thisArg;否则T为undefined.
+if (thisArg) {
+T = thisArg;
+}
+// 5. 创建新数组A,长度为原数组O长度len
+A = new Array(len);
+// 6. 将k赋值为0
+k = 0;
+// 7. 当 k < len 时,执行循环.
+while(k < len) {
+var kValue, mappedValue;
+//遍历O,k为原数组索引
+if (k in O) {
+//kValue为索引k对应的值.
+kValue = O[ k ];
+// 执行callback,this指向T,参数有三个.分别是kValue:值,k:索引,O:原数组.
+mappedValue = callback.call(T, kValue, k, O);
+// 返回值添加到新数组A中.
+A[ k ] = mappedValue;
+}
+// k自增1
+k++;
+}
+// 8. 返回新数组A
+return A;
+};
+}
+遍历数组，跑起来就停不下来，调用就会遍历整个数组，无法中断循环
+回调函数的第一个参数表示数组中的每一个元素，第二个表示索引号,第三个表示正在操作的数组，可选
+返回值undefined
+//实例
+function logArrayElements(element, index, array) {
+console.log("a[" + index + "] = " + element);
+}
+// 注意索引2被跳过了，因为在数组的这个位置没有项
+[2, 5, ,9].forEach(logArrayElements);
+// a[0] = 2
+// a[1] = 5
+// a[3] = 9
+[2, 5,"" ,9].forEach(logArrayElements);
+// a[0] = 2
+// a[1] = 5
+// a[2] =
+// a[3] = 9
+使用thisArg
+因为thisArg参数(this)传给了forEach()，每次调用时，它都被传给callback函数，作为它的this值。但是在ES6的箭头函数表达式传入函数参数，thisArg参数会被忽略，因为箭头函数在词法上绑定了this值。
+function Counter() {
+this.sum = 0;
+this.count = 0;
+}
+Counter.prototype.add = function(array) {
+array.forEach(function(entry) {
+this.sum += entry;
+++this.count;
+}, this);
+//console.log(this);
+};
+var obj = new Counter();
+obj.add([1, 3, 5, 7]);
+obj.count;
+// 4 === (1+1+1+1)
+obj.sum;
+// 16 === (1+3+5+7)
+兼容问题 IE8及以下不支持
+// Production steps of ECMA-262, Edition 5, 15.4.4.18
+// Reference: http://es5.github.io/#x15.4.4.18
+if (!Array.prototype.forEach){
+Array.prototype.forEach = function(callback, thisArg) {
+var T, k;
+if (this == null) {
+throw new TypeError(' this is null or not defined');
+}
+// 1. Let O be the result of calling toObject() passing the
+// |this| value as the argument.
+var O = Object(this);
+// 2. Let lenValue be the result of calling the Get() internal
+// method of O with the argument "length".
+// 3. Let len be toUint32(lenValue).
+var len = O.length >>> 0;
+// 4. If isCallable(callback) is false, throw a TypeError exception.
+// See: http://es5.github.com/#x9.11
+if (typeof callback !== "function") {
+throw new TypeError(callback + ' is not a function');
+}
+// 5. If thisArg was supplied, let T be thisArg; else let
+// T be undefined.
+if (arguments.length > 1) {
+T = thisArg;
+}
+// 6. Let k be 0
+k = 0;
+// 7. Repeat, while k < len
+while (k < len) {
+var kValue;
+// a. Let Pk be ToString(k).
+//    This is implicit for LHS operands of the in operator
+// b. Let kPresent be the result of calling the HasProperty
+//    internal method of O with argument Pk.
+//    This step can be combined with c
+// c. If kPresent is true, then
+if (k in O) {
+// i. Let kValue be the result of calling the Get internal
+// method of O with argument Pk.
+kValue = O[k];
+// ii. Call the Call internal method of callback with T as
+// the this value and argument list containing kValue, k, and O.
+callback.call(T, kValue, k, O);
+}
+// d. Increase k by 1.
+k++;
+}
+// 8. return undefined
+};
+}
+根据当前回调函数的返回值决定是否进行下一次循环
+第一个参数是数组中的每一个元素  第二个参数表示索引号
+兼容问题 IE8及以下不支持
+//兼容问题
+if (!Array.prototype.every){
+Array.prototype.every = function(fun /*, thisArg */){
+'use strict';
+if (this === void 0 || this === null)
+throw new TypeError();
+var t = Object(this);
+var len = t.length >>> 0;
+if (typeof fun !== 'function')
+throw new TypeError();
+var thisArg = arguments.length >= 2 ? arguments[1] : void 0;
+for (var i = 0; i < len; i++){
+if (i in t && !fun.call(thisArg, t[i], i, t))
+return false;
+}
+return true;
+};
+}
+callback 被调用时传入三个参数：元素的值，元素的索引，被遍历的数组
+数组中如果有一个满足条件，返回true，否则返回false
+//callback
+function isBigEnough(element, index, array){
+return (element >= 10);
+}
+var passed = [2, 5, 8, 1, 4].some(isBigEnough);
+// passed is false
+passed = [12, 5, 8, 1, 4].some(isBigEnough);
+// passed is true
+some有兼容问题，IE8及以下不支持
+//兼容代码
+if (!Array.prototype.some){
+Array.prototype.some = function(fun /*, thisArg */){
+'use strict';
+if (this === void 0 || this === null)
+throw new TypeError();
+var t = Object(this);
+var len = t.length >>> 0;
+if (typeof fun !== 'function')
+throw new TypeError();
+var thisArg = arguments.length >= 2 ? arguments[1] : void 0;
+for (var i = 0; i < len; i++){
+if (i in t && fun.call(thisArg, t[i], i, t))
+return true;
+}
+return false;
+};
+}
+判断数组中的每一项是否都满足条件，所有满足条件的则返回新数组
+返回true表示保留该元素（通过测试），false则不保留
+这些概念去看some
+function isBigEnough(element) {
+return element >= 10;
+}
+var filtered = [12, 5, 8, 130, 44].filter(isBigEnough);
+// filtered is [12, 130, 44]
+//另一种写法
+var arr = [12, 5, 8, 130, 44];
+var filt = arr.filter(function(element){
+return element >= 10;
+})//filt is [12, 130, 44]
+filter有兼容问题，IE8及以下不支持
+//兼容代码
+//假定 fn.call 等价于 Function.prototype.call 的初始值，且 Array.prototype.push 拥有它的初始值。
+if (!Array.prototype.filter)
+{
+Array.prototype.filter = function(fun /*, thisArg */)
+{
+"use strict";
+if (this === void 0 || this === null)
+throw new TypeError();
+var t = Object(this);
+var len = t.length >>> 0;
+if (typeof fun !== "function")
+throw new TypeError();
+var res = [];
+var thisArg = arguments.length >= 2 ? arguments[1] : void 0;
+for (var i = 0; i < len; i++)
+{
+if (i in t)
+{
+var val = t[i];
+// NOTE: Technically this should Object.defineProperty at
+//       the next index, as push can be affected by
+//       properties on Object.prototype and Array.prototype.
+//       But that method's new, and collisions should be
+//       rare, so use the more-compatible alternative.
+if (fun.call(thisArg, val, i, t))
+res.push(val);
+}
+}
+return res;
+};
+}
+start
+end
+截取一个生成新数组，不影响原来数组，包含从start到end(不包括该元素)指定的array元素
+var a = [1,2,3,4,5];
+a.slice(0,3);    // 返回 [1,2,3]
+a.slice(3);      // 返回 [4,5]
+a.slice(1,-1);   // 返回 [2,3,4]
+a.slice(-3,-2);  // 返回 [3];
+//IE 4存在的Bug: 返回[1,2,3]
+参数有start，deleteCount，options(替换)
+返回值是截取到的数组
+//定义一个数组
+var arr = [10,20,30,40,50,60,70,80,90];
+//三个参数的情况  从索引为三的地方数三个，替换这三个数
+var result = arr.splice(3,3,100,200,300);
+//arr = [10,20,30,100,200,300,70,80,90];
+//result = [40,50,60];
+//两个参数的情况  从索引为三的地方截取三个
+var result1 = arr.splice(3,3);
+//arr = [10,20,30,70,80,90];
+//result = [100,200,300];
+//一个参数的情况，是从索引为三的地方一直到最后截取
+var result2 = arr.splice(3);
+//arr = [70,80,90]
+//result2 = [10,20,30]
+如果没有参数，默认用逗号作为分割符
+如果有参数，则参数是用于分隔数组元素的字符或字符串
+返回字符串，通过把array每个元素转换成字符串，用参数连接起来
+可以用String对象的split()方法进行相反的操作，把字符串根据参数分隔成数组
+var a = new Array(1, 2, 3, "testing");
+//a = [1,2,3,testing]
+var s = a.join("+");  // s 是字符串"1+2+3+testing"
+参数至少是一个
+返回一个新数组
+如果操作的参数是一个数组，那么添加的是数组中的元素，而不是数组
+var a = [1,2,3];
+a.concat(4, 5)          //返回 [1,2,3,4,5]
+a.concat([4,5]);        //返回 [1,2,3,4,5]
+a.concat([4,5],[6,7])   //返回 [1,2,3,4,5,6,7]
+a.concat(4, [5,[6,7]])  //返回 [1,2,3,4,5,[6,7]]
+要添加到array的末尾，可以是一个也可以是多个
+返回值是添加后的数组的长度
+pop()方法和push()方法可以提供先进后出的栈的功能
+在对象中添加元素
+var obj = {
+length: 0,
+addElem: function addElem(elem){
+[].push.call(this, elem);
+}
+};
+obj.addElem({});
+obj.addElem({});
+console.log(obj.length);
+// → 2
+移除的是数组中的第一个元素，其余的向前移
+返回的是移除元素的值
+如果是空数组，则不进行任何操作，返回undefined
+​
+compareFunction 可选。是用来指定按什么顺序进行排序的函数，可选
+返回排序后的数组
+如果不传参数，将按照字母（字符编码）顺序最数组进行排序，所以要把数组中的元素转化为字符串以便进行比较
+如过按照别的顺序进行排序，就要提供比较函数（参数a,b）
+// 按照数字顺序排序的排序函数
+//a-b 表示升序排列
+function  sortAscending(a, b) { return a - b; }
+//b-a 表示降序排列
+function  sortDescending(a,b) { return b - a; }
+var a = new Array(33, 4, 1111, 222);
+// 按照字母顺序的排序
+a.sort();             // 结果为: 1111, 222, 33, 4
+// 按照数字顺序的排序
+a.sort(sortAscending);  //结果为: 4, 33, 222, 1111
+a.sort(sortDescending); //结果为：1111，222，33，4
+颠倒数组中元素的顺序，不创建新数组
+var a = new Array(1, 2, 3);
+// a = [1,2,3]    a[0] == 1, a[2] == 3;
+a.reverse(  );
+//Now  a = [3,2,1]  a[0] == 3, a[2] == 1;
+searchElement  要查找的元素
+fromIndex  开始查找的位置
+返回值如果找到了元素就返回元素在数组中的索引位置，若没有找到则返回-1
+var array = [2, 5, 9];
+array.indexOf(2);     // 0
+array.indexOf(7);     // -1
+array.indexOf(9, 2);  // 2
+array.indexOf(2, -1); // -1
+array.indexOf(2, -3); // 0
+找出指定元素出现的所有位置
+var indices = [];
+var array = ['a', 'b', 'a', 'c', 'a', 'd'];
+var element = 'a';
+//判断元素在不在数组里面
+var idx = array.indexOf(element);
+//如果元素在数组里面，就循环
+while (idx != -1) {
+//把索引推入新数组中
+indices.push(idx);
+//从找到元素的下一个索引开始继续查找
+idx = array.indexOf(element, idx + 1);
+}
+console.log(indices);
+// [0, 2, 4]
+判断一个元素是否在数组里，不在则更新数组
+//定义一个函数
+function update(vegs, veg) {
+//如果数组中不存在
+if (vegs.indexOf(veg) === -1) {
+//在数组中添加元素
+vegs.push(veg);
+console.log('New vegs is :' + vegs);
+//如果在数组中存在
+} else if (vegs.indexOf(veg) > -1) {
+//这个元素已经存在在数组中
+console.log(veg + ' already exists in the vegs.');
+}
+}
+var vegs = ['potato', 'tomato', 'chillies', 'green-pepper'];
+update(vegs, 'spinach');
+// New vegs is : potato,tomato,chillies,green-papper,spinach
+update(vegs, 'spinach');
+// spinach already exists in the vegs.
+兼容问题  IE8及以下不兼容
+//兼容代码
+// Production steps of ECMA-262, Edition 5, 15.4.4.14
+// Reference: http://es5.github.io/#x15.4.4.14
+if (!Array.prototype.indexOf) {
+Array.prototype.indexOf = function(searchElement, fromIndex) {
+var k;
+// 1. Let O be the result of calling ToObject passing
+//    the this value as the argument.
+if (this == null) {
+throw new TypeError('"this" is null or not defined');
+}
+var O = Object(this);
+// 2. Let lenValue be the result of calling the Get
+//    internal method of O with the argument "length".
+// 3. Let len be ToUint32(lenValue).
+var len = O.length >>> 0;
+// 4. If len is 0, return -1.
+if (len === 0) {
+return -1;
+}
+// 5. If argument fromIndex was passed let n be
+//    ToInteger(fromIndex); else let n be 0.
+var n = +fromIndex || 0;
+if (Math.abs(n) === Infinity) {
+n = 0;
+}
+// 6. If n >= len, return -1.
+if (n >= len) {
+return -1;
+}
+// 7. If n >= 0, then Let k be n.
+// 8. Else, n<0, Let k be len - abs(n).
+//    If k is less than 0, then let k be 0.
+k = Math.max(n >= 0 ? n : len - Math.abs(n), 0);
+// 9. Repeat, while k < len
+while (k < len) {
+// a. Let Pk be ToString(k).
+//   This is implicit for LHS operands of the in operator
+// b. Let kPresent be the result of calling the
+//    HasProperty internal method of O with argument Pk.
+//   This step can be combined with c
+// c. If kPresent is true, then
+//    i.  Let elementK be the result of calling the Get
+//        internal method of O with the argument ToString(k).
+//   ii.  Let same be the result of applying the
+//        Strict Equality Comparison Algorithm to
+//        searchElement and elementK.
+//  iii.  If same is true, return k.
+if (k in O && O[k] === searchElement) {
+return k;
+}
+k++;
+}
+return -1;
+};
+}
+©copyright burning.

@@ -1,0 +1,207 @@
+Lang-Python
+Data Structures
+Dictionary
+List
+Functions
+Object and Class
+Object Types
+Variables, Objects, Types, References
+python中的变量 和 引用
+Topics
+Concurrency
+Errors
+Questions/Problems
+compile
+eval, exec
+Python’s closures are )
+def multipliers():
+return [lambda x : i * x for i in range(4)]
+print [m(2) for m in multipliers()]
+The output of the above code will be [6, 6, 6, 6] (not [0, 2, 4, 6]).
+The reason for this is that Python’s closures are . This means that the values of variables used in closures are looked up at the time the inner function is called. So as a result, when any of the functions returned by multipliers() are called, the value of i is looked up in the surrounding scope at that time. By then, regardless of which of the returned functions is called, the for loop has completed and i is left with its final value of 3. Therefore, every returned function multiplies the value it is passed by 3, so since a value of 2 is passed in the above code, they all return a value of 6 (i.e., 3 x 2).
+对于这个例子，重要的一个点是，是不属于这个lambda函数的，所以multipliers返回的是一个含有4个function的列表。late binding告诉我们，运行该lambda函数的时候，我们才计算函数的内容（也不一定要是lambda,一般的函数也可以，因为我们这里是讨论闭包），而彼时i已经变成3。这个问题的难度在于，把列表推导式使用的变量与lambda函数调用的变量用到了一起，再加上了闭包。
+有序的字典对象
+or: Sequence
+del 用del来删除dict/list中的一个/多个元素，比使用remove要快
+Comprehension
+In Python 2.6 and earlier, the dict constructor can receive an iterable of key/value pairs:
+From Python 2.7 and 3 onwards, you can just use the dict comprehension syntax directly:
+Sort
+Traverse
+Initialization 初始化
+切片
+倒序输出列表
+(i.e. [] here)
+list comprehension中，只能使用for和if这2种语句。
+1、将.py源代码，解析成语法树
+2、将语法树，解析成AST树
+3、根据AST树，生成字节码
+Set Comprehension: use curly brackets instead of square brackets to create a set.
+no_primes = {j for i in range(2,sqrt_n) for j in range(i*2, n, i)}
+S = [x**2 for x in range(10)]
+V = [2**i for i in range(13)]
+M = [x for x in S if x % 2 == 0] ## [0, 4, 16, 36, 64]
+m = [x for x in [x**2 for x in range(10)] if x%2==0] ## [0, 4, 16, 36, 64]
+>>> noprimes = [j for i in range(2, 8) for j in range(i*2, 50, i)] # 倘若写成 noprimes = [j for j in range(i*2, 50, i) for i in range(2, 8) ] 就不是本来的意思了,因为后续的for语句都嵌套在之前的for语句中
+primes = [x for x in range(2, 50) if x not in noprimes]
+>>> print primes
+[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
+[(x,y,z) for x in range(1,30) for y in range(x,30) for z in range(y,30) if x**2 + y**2 == z**2]
+you can , so you could write the above example with a single statement (without the need for the temporary variable "noprimes").
+A decorator is a function that expects ANOTHER function as parameter
+在python中，类型属于对象，变量是没有类型的.
+:
+, i.e. it can be used in a for loop.
+(第二次不会报错，但什么也不会发生). It's because they do not store all the values in memory, they generate the values on the fly
+.
+是一个迭代器方法，作用于迭代器，并把参数追加到迭代器的后面
+GREAT TUT:
+Generator comprehensions were introduced with Python 2.6. They are simply a generator expression with a parenthesis - round brackets - around it. Otherwise, the syntax and the way of working is like list comprehension, but a generator comprehension returns a generator instead of a list
+想要print始终显示在同一行，本身是在最后加上逗号即可，即：
+然后又想要实现，新打印的一行，冲掉之前旧的一行，达到显示出下载文件大小一点点增加，但是却始终保持同行，那么就再打印的内容最后添加上\r即可：
+Whenever you use a for loop, or map, or a list comprehension, etc. in Python, the next method is called automatically to get each item from the iterator, thus going through the process of iteration.
+Lambda functions are mainly used in combination with the functions filter(), map() and reduce(). The lambda feature was added to Python due to the demand from Lisp programmers.
+:
+if条件语句后面需要跟随bool类型的数据，即True或者False。然而，如果不是bool类型的数据，可以(自动)将其转换成bool类型的数据，
+在Python中，None、空列表[]、空字典{}、空元组()、0等一系列代表空和无的对象会被转换成False。除此之外的其它对象都会被转化成True。
+在命令if not 1中，1便会转换为bool类型的True。not是逻辑运算符非，not 1则恒为False。因此if语句if not 1之下的语句，永远不会执行。
+Classes are objects too
+: like creating any object
+方法能动态的创建类: 接受一个类的描述作为参数，然后返回一个类
+Swap:
+# Definition for a binary tree node.
+# class TreeNode(object):
+#     def __init__(self, x):
+#         self.val = x
+#         self.left = None
+#         self.right = None
+t = root.left
+root.left = root.right
+root.right = t
+相当于：
+root.left, root.right = root.right, root.left
++
++
+要返回空？
+You use == when comparing values and is when comparing identities.
++** False的有None, 0, []**
+None不是空字符串。
+None和任何其他的数据类型比较永远返回False。
+None有自己的数据类型NoneType。
+你可以将None复制给任何变量，但是你不能创建其他NoneType对象。
+整数取整：小数点后的都不要(所以是向0取整)（经过测试）
+Python 2 automatically performs integer arithmetic if both operands are integers. As a result, 5/2 yields 2, while 5./2 yields 2.5.
+the , regardless of the operand types. That’s why 5.0//2.0 yields 2.0 even in Python 2.
+Python 2中：
+x = 4.5
+y = 2
+print x//y  结果是2.0
+x = 4.5
+y = 2
+print x/y  结果是2.25
+5//2 结果 2
+5/2  结果 2
+Python3中除法“/”变成了浮点除法,不默认整数除法，而//则保留仍然进行整数除法
+: global name  is not defined
+Case 大小写
+字符串操作
+截取字符串
+检查和匹配
+isalpha
+join 字符串连接
+变量存储在内存中的值。这就意味着在创建变量时会在内存中开辟一个空间。
+因此，变量可以指定不同的数据类型，这些变量可以存储整数，小数或字符。
+：id,名称，数据，数据类型（由解释器决定）
+。
+调用函数时，把参数里传入的东西对相应对象的引用依次赋给对应的内部变量。而此时，则要考虑到，外部namespace和函数内部namespace的隔离。
+如果一个函数里面使用了一个变量，那么 Python 会先看看有没有对应的本地变量，如果没有找到，但找到一个全局变量，那么 Python 会把那个全局变量的引用赋给一个新的本地变量。所以，现在在函数里的那个变量和全局变量其实不是同一个变量，他们只不过暂时有了相同的引用。这样其实可以看作 Python 为你做了。 ==>> 局部里修改一个全局变量，全局变量会改变
+Python 是强类型语言？
+强、弱类型
+弱类型weakly typed: 否则为weakly typed。比如C语言的缓冲区溢出，属于trapped errors，即属于forbidden behaviors..故C是弱类型
+动态、静态类型
+动态类型dynamiclly: 如果在运行时拒绝ill behaviors, 则是dynamiclly typed。
+静态类型可以分为两种：
+如果类型是语言语法的一部分，在是explicitly typed显式类型；
+如果类型通过编译时推导，是implicity typed隐式类型, 比如ML和Haskell
+例子：
+弱类型、静态类型 ： C/C++
+弱类型、动态类型检查： Perl/PHP
+强类型、静态类型检查 ：Java/C#
+强类型、动态类型检查 ：Python, Scheme
+静态显式类型 ：Java/C
+静态隐式类型 ：Ocaml, Haskell
+would go wrong.
+对于任何Python程序，不管有多少的处理器，任何时候都总是只有一个线程在执行。 "不要使用多线程，请使用多进程。"GIL对诸如当前线程状态和为垃圾回收而用的堆分配对象这样的东西的访问提供着保护。然而，这对Python语言来说没什么特殊的，它需要使用一个GIL。这是该实现的一种典型产物。现在也有其它的Python解释器（和编译器）并不使用GIL。虽然，对于CPython来说，自其出现以来已经有很多不使用GIL的解释器。
+由于GIL，python的多线程，threading非常适合i/o密集，而不适合cpu密集。如果要利用多核，则要使用。
+Global Interpreter Lock ，意即全局解释器锁
+：
+: Python 还有另一种与 C 模块进行互通的机制 : ctypes
+unicode是字符集的映射(编码的映射)，utf-8等等是编码方式（在计算机中怎么存储）。 gbk,ascii也是编码，不过不是对应unicode字符集。
+must be placed into the source files either as first or second line in the file, such as:
+.
+这个函数的作用是将string
+首先要注意区分，一个字符的不同stage，
+，则仍是一个string对象，直接输出会显示乱码。正确输出，需要先经过两步，
+查看系统的encoding
+字符编码/解码函数：
+unicode(string [, encoding[, errors]]) -> object
+这个函数的作用是将string
+省略参数将用python默认的ASCII来解码
+在python中需要使用unicode需要注意：
+需要注意的是，Unicode只是一个符号集，它只规定了符号的二进制代码，却没有规定这个二进制代码应该如何存储。
+UTF-8（8-bit Unicode Transformation Format）是一种针对Unicode的可变长度字符编码（定长码），也是一种前缀码。它可以用来表示Unicode标准中的任何字符，，这使得原来处理ASCII字符的软件无须或只须做少部份修改，即可继续使用。因此，它逐渐成为电子邮件、网页及其他存储或传送文字的应用中，优先采用的编码。互联网工程工作小组（IETF）要求所有互联网协议都必须支持UTF-8编码。
+ValueError
+IndentationError
+逐行读取文件
+利用让for循环自动调用next从而前进到文件的下一行，而不是直接把文件读取到内存中,有三点原因：写法简单，运行速度快，节省内存。示例如下：
+for line in open('myfile.py'):
+...print line.upper()`
+而不是使用readlines方法：
+for line in open('myfile.py').readlines():
+...print line.upper()`
+with open(...) as f:
+for line in f:
+<do something with line>
+The with statement handles opening and closing the file, including if an exception is raised in the inner block.
+Problems
+cmp
+Key
+reverse
+\w  alphanumerice
+Functions
+sorted函数是内建函数，他接受一个序列，返回有序的副本。他与sort的唯一区别就是会返回副本 (sorted is )
+Python以引用方式管理对象，你可以交换引用，但通常不能交换内存中的对象值。当然你也不需要这样做。
+a,b = b,a 即可
+def swap(t1, t2):
+t2, t1 = t1, t2
+return
+The code above does
+not changed，即交换的是局部变量。
+def swap(a,b):
+tmp = a
+a = b
+b = tmp
+The code above does ! 同样是因为局部namespace的隔离。
+但是如果在主程序中：
+tmp = swap_a
+swap_a = swap_b
+swap_b = tmp
+则swap_a, swap_b 可以交换
+＋ Python的标准库手册推荐在任何系统下都尽量使用
+如何调用windows命令
+重点：
+多态？反射机制？
+Iterator&Generator?
+数据结构（set，dict, tuple)
+Decorators?
+内置函数,例如set___, __import等
+特殊的语句yield, with
+垃圾回收机制
+Decorators的定义,以及用法
+python线程机制以及为啥python多线程很慢。
+Errors and Exceptions
+list = ['a', 'b', 'c', 'd', 'e']
+print list[10:]
+输出[]，却不会引起IndexError错误
+attempting to access  at a starting index that exceeds the number of members in the list will not result in an IndexError and will simply return an empty list.
+What makes this a particularly nasty gotcha is that it can lead to bugs that are really hard to track down since no error is raised at runtime.

@@ -1,0 +1,11 @@
+Linux的发行版以及不同发行版之间的联系和区别
+发行版：
+发行版为许多不同的目的而制作,（大的范畴可以分为两类：一类是商业公司维护的发行版本，一类是社区组织维护的发行版本）包括对不同计算机结构的支持, 对一个具体区域或语言的本地化，实时应用，和嵌入式系统，甚至许多版本故意地只加入免费软件。已经有超过三百个发行版被积极的开发，最普遍被使用的发行版有大约十二个。Fedora Core、Debian、Mandrake、Ubuntu、Red Hat Linux、SuSE、Linux Mint、Gentoo、centos。
+不同发行版之间的联系和区别：
+Fedora是基于RHEL，CentOS，Scientific Linux, 和Oracle Linux的社区版本。相比RHEL，Fedora打包了显著的更多的软件包。其中一个原因是，多样化的社区参与Fedora的建设;它不只是一家公司。在这个过程中，CentOS用于活动，演示和实验，因为它是对最终用户免费提供的，并具有比Fedora的一个更长的发布周期（通常每隔半年左右发布一个新版本）。
+SUSE,  SUSE Linux Enterprise Server (SLES), 和openSUSE 之间的关系类似于 Fedora, Red Hat Enterprise Linux, 和CentOS的关系。
+Debian是包括Ubuntu在内许多发行版的上游，而Ubuntu又是Linux Mint及其他发行版的上游。Debian在服务器和桌面电脑领域都有着广泛的应用。Debian是一个纯开源计划并着重在一个关键点上，稳定性。它同时也提供了最大的和完整的软件仓库给用户。
+（fedora和centos都是redhat的衍生版，前者更新潮，适合桌面和开发，后者更适合服务器,特别是装oracle,centos是不二的选择。
+debian是ubuntu的基础，pkg系统比rpm要先进。ubuntu是在debian的基础上整合相关软件和作固定设置而成。ubuntu的长期维护版本不错，适合企业用。
+gentoo，arch,都有自己的包管理系统，gentoo是源码包，借鉴自bsd的port,arch是2进制包，相当于gentoo和debian的结合体。）
+社区找到这么一张图，发现还是有几分的:

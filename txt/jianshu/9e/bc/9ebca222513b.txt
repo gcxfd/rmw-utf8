@@ -1,0 +1,129 @@
+Java AbstractQueuedSynchronizer源码阅读1-基于队列的同步器框架
+Provides a framework for implementing blocking locks and related synchronizers (semaphores, events, etc) that rely on first-in-first-out (FIFO) wait queues.
+AbstractQueuedSynchronizer提供了一个用于实现阻塞锁及其他同步器（如semaphores,events等）的框架，该框架基于一个FIFO的等待队列。如ReentrantLock的实现就是基于这个框架的。
+AbstractQueuedSynchronizer的核心实现是一个双向队列，队列中的每一个元素是一个Node。Node是AbstractQueuedSynchronizer定义的一个内部类。AbstractQueuedSynchronizer结构的主体代码提取出来如下所示（该处未列出完整代码）：
+public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer implements java.io.Serializable {
+static final class Node {
+volatile int waitStatus; //节点的状态
+volatile Node prev;//前向指针
+volatile Node next;//后向指针
+volatile Thread thread;//节点关联的线程
+}
+private transient volatile Node head;//队列的head
+private transient volatile Node tail;//队列的tail
+}
+这样看起来就十分清晰了。每个Node有一个前向指针prev和一个后向指针、和这个Node关联的thread以及一个状态位。而AbstractQueuedSynchronizer 则维护了一个head节点和一个tail节点。
+AbstractQueuedSynchronizer的实现的队列是一种FIFO的队列，它保证位于队列前面的Node（其关联的线程），将总能第一个尝试去争用需要同步的资源。前面的Node（其关联的线程）在释放资源时，会去唤醒后继节点。
+队列结构虽然简单，但是在涉及需要同步的场景中，会有多个线程同时使用这一个队列。每个线程均会尝试访问和修改队列的head和tail，并修改与自己关联的Node的prev和next指针，而每个Node又有可能被其他线程访问。所以，可以看到在上述代码的成员变量的声明中，均使用了volatile关键字，使得所有对变量的改动都直接刷新到内存中，而不采取寄存器缓存。
+下面将对AbstractQueuedSynchronizer中用于实现互斥锁的两个方法acquire()和release()的源码进行简单阅读，了解下AbstractQueuedSynchronizer的入队和出队，以及对线程的阻塞和唤醒。
+acquire()和release()是互斥模式（exclusive mode）下的两个方法。acquire()方法可理解为获取互斥锁，release()可理解为释放互斥锁。
+acquire()用来获取互斥锁。
+代码如下：
+public final void acquire(int arg) {
+if (!tryAcquire(arg) &&
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+selfInterrupt();
+}
+其中有三个主要方法：
+按照这3个方法的顺序，acquire()做的主要操作就是尝试获取锁，未成功就新建Node并入队，然后再次尝试获取锁（在这次尝试的过程中，可能会将当前线程挂起）。
+下面对这3个方法进行介绍。
+tryAcquire()是尝试获取锁，它是由用户自定义的。
+引用AbstractQueuedSynchronizer类的注释
+使用AbstractQueuedSynchronizer作为同步将需要重定义以下方法：
+tryAcquire
+tryRelease
+tryAcquireShared
+tryReleaseShared
+isHeldExclusively
+上面每个方法默认实现都是throws UnsupportedOperationException，定义这些方法是使用AbstractQueuedSynchronizer的唯一途径。
+现在，我们暂时只需要知道tryAcquire()是和用户的具体实现有关。
+addWaiter()是新建Node并入队，其代码如下：
+private Node addWaiter(Node mode) {
+Node node = new Node(Thread.currentThread(), mode);//新建与一个当前线程关联的node
+// Try the fast path of enq; backup to full enq on failure
+Node pred = tail;
+if (pred != null) {//如果tail不为空
+node.prev = pred;//将新建的node加入到队尾
+if (compareAndSetTail(pred, node)) {//调用CAS（CompareAndSet）重新设置tail
+pred.next = node;
+return node;
+}
+}
+//如果入队失败了，则调用enq()
+enq(node);
+return node；
+}
+addWaiter()在tail不为空时，会尝试一次入队。具体操作为将新Node加入队尾，并重设tail为新的Node。
+如果上述的入队失败了，则调用enq()方法入队。
+enq()代码如下所示
+private Node enq(final Node node) {
+for (;;) {//一直循环入队，直到成功
+Node t = tail;
+if (t == null) { // Must initialize，tail为空时，进行初始化
+if (compareAndSetHead(new Node()))
+tail = head;
+} else {//tail不为空时，将新建的node加入到队尾
+node.prev = t;
+if (compareAndSetTail(t, node)) {
+t.next = node;
+return t;
+}
+}
+}
+}
+enq()的主体是个循环，会不停循环直到入队成功。
+enq()包含两个部分，一是在tail为空时，进行初始化，设置了一个未关联到任何thread的Node为队列的head。
+二是在tail不为空时，将新建的node加入到队尾（这部分代码和addWaiter()的刚开始的代码基本一致）。
+这两步的流程如下：
+从上面看到空队列在加入第一个节点时，会形成一个没有实际意义的head，它指向一个从没关联到任何线程的node。
+其实enq()已经实现了入队的操作，而addWaiter()之所以存在相近的代码，应当正如addWaiter()中的注释中所写的一样“Try the fast path of enq”，是尝试一次快速入队，尽量不执行enq()的for和if。
+当addWaiter()成功入队新建的节点后，便会调用acquireQueued()再次尝试获取锁。
+acquireQueued()的代码如下：
+final boolean acquireQueued(final Node node, int arg) {
+boolean failed = true;
+try {
+boolean interrupted = false;
+for (;;) {
+final Node p = node.predecessor();//获取当前节点的前驱节点
+if (p == head && tryAcquire(arg)) {//如果前驱节点是head，则尝试获取锁
+setHead(node);//如果获取锁成功了，则重新设置head（本质上是一个出队的操作）
+p.next = null; // help GC
+failed = false;
+return interrupted;
+}
+if (shouldParkAfterFailedAcquire(p, node) &&
+parkAndCheckInterrupt())//如果没能成功获取锁，则要考虑是否将线程挂起了
+interrupted = true;
+}
+} finally {
+if (failed)
+cancelAcquire(node);
+}
+}
+代码的主体部分是个for循环，会不停的循环直到获取到锁，但在循环的过程中可能被挂起。
+parkAndCheckInterrupt()的代码很简单，直接将线程park。
+private final boolean parkAndCheckInterrupt() {
+LockSupport.park(this);
+return Thread.interrupted();
+}
+release用来释放互斥锁，其代码如下：
+public final boolean release(int arg) {
+if (tryRelease(arg)) {
+Node h = head;
+if (h != null && h.waitStatus != 0)
+unparkSuccessor(h);
+return true;
+}
+return false;
+}
+tryRelease由用户实现，我们先假设执行成功了。接下来：
+unparkSuccessor()的代码如下：
+private void unparkSuccessor(Node node) {
+...
+if (s != null)
+LockSupport.unpark(s.thread);
+...
+}
+可以看到unparkSuccessor()方法中的unpark()和parkAndCheckInterrupt()中的park()遥相呼应。
+后者在acquire()获取锁时，将线程挂起，而前者在release()时，将线程唤醒。
+本文主要介绍了AbstractQueuedSynchronizer中双向队列的实现，acquire()中队列的入队和出队操作，以及acquire()对线程的阻塞和release()对线程的释放。

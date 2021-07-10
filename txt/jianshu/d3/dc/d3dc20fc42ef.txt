@@ -1,0 +1,99 @@
+整理前端面试题(五) : JavaScript题目
+function escapeHtml ( str ) {
+var exp = /[<>&]/g;
+var newStr = str.replace( exp, function( match ) {
+//该传入什么参数
+if( match === '<' ) {
+return '<'
+}else if ( match === '>' ) {
+return '&gt'
+}else if ( match ==='&' ) {
+return '&'
+}
+})
+return newStr;
+}
+function getSortedRandomNumber () {
+var arr = [];
+for( var i = 0; i < 10; i++ ) {
+arr.push( Math.floor( Math.random() * 90 ) + 10 );
+}
+return arr.sort(function ( a, b ) {
+return a - b;
+})
+}
+function getQueryJson ( URLstr ) {
+var queryIndex = URLstr.indexOf('?') + 1;
+var queryStr = URLstr.slice( queryIndex ); //a=1&b=2&c=&d=xxx&e
+var arr = queryStr.split( '&' ); //[ a=1, b=2, c=, d=xxx, e ]
+var obj = {};
+var resultArr =  [];
+for( var i = 0; i < arr.length; i++ ) {
+var tempArr = arr[ i ].split( '=' );
+obj[ tempArr[0] ] = tempArr[1];
+}
+for( var key in obj ){
+resultArr.push( '"' + key + '"' + ':'  + '"' + obj[ key ] + '"'   );
+}
+return '{' + resultArr.join(',') + '}'; //{"a":"1","b":"2","c":"","d":"xxx","e":"undefined"}
+}
+function getQueryJson ( URLstr ) {
+var queryIndex = URLstr.indexOf('?') + 1;
+var queryStr = URLstr.slice( queryIndex ); //a=1&b=2&c=&d=xxx&e
+var arr = queryStr.split( '&' ); //[ a=1, b=2, c=, d=xxx, e ]
+var obj = {};
+var resultArr =  [];
+for( var i = 0; i < arr.length; i++ ) {
+var tempArr = arr[ i ].split( '=' );
+obj[ tempArr[0] ] = tempArr[1];
+}
+return JSON.stringify( obj ); //{"a":"1","b":"2","c":"","d":"xxx"}
+}
+答案: 当使用RegExp()构造函数的时候，不仅需要转义引号（即\”表示”），并且还需要双反斜杠（即\表示一个\）。使用正则表达字面量的效率更高。
+var regMail = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/;
+for(var i=1;i<=3;i++){
+setTimeout(function(){
+console.log(i);
+},0);
+}
+结果: 4, 4, 4
+for( var i = 1; i <= 3; i++ ) {
+setTimeout( function( num ) {
+return function () {
+console.log( num );
+}
+} ( i ), 0);
+}
+for( var i = 1; i <= 3; i++ ) {
+setTimeout( (function (){
+var j = i;
+return function () {
+console.log( j );
+}
+})(), 0);
+}
+if( typeof String.prototype.trim !== 'function' ) {
+String.prototype.trim = function( ) {
+return this.replace ( /^\s*|\s*$/g, '' );
+}
+}
+function clearText() {
+var texts = document.getElementsByTagName( 'input' );
+for( var i = 0; i< texts.length; i++ ) {
+if( texts[ i ].type === 'text' ) {
+texts[ i ].value = '';
+}
+}
+}
+Javascript中, 以下哪条语句一定会产生运行错误？ ()
+A、var _变量=NaN;
+B、var 0bj = [];
+C、var obj = //;
+D、var obj = {};
+答案:BC
+请选择结果为真的表达式：（）
+A.null instanceof Object
+B.null === undefined
+C.null == undefined
+D.NaN == NaN
+答案: C

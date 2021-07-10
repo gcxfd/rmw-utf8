@@ -1,0 +1,90 @@
+[快学Python3]JSON解析
+本章节将为大家介绍如何使用Python来编码和解码json对象。
+json是javascript object notation的简写，是一种轻量级的数据交换格式，易于阅读和编写，是目前前后端最常用的数据交互格式之一。
+在Python中，提供了标准的json库来对json串进行解码和编码解析。
+常用的函数如下
+将python对象编码成json字符串, 返回json串
+将已编码的json串解码为python对象，返回python对应的数据类型
+下面我们看下python对象和json类型的转化对照表:
+json串转dict（字典）示例
+# -*- coding:utf-8 -*-
+__author__ = '苦叶子'
+import json
+if __name__ == "__main__":
+print("json转dict")
+json_str = '{"name": "开源优测", "url": "www.testingunion.com", "id": "DeepTest"}'
+# 原类型
+print("原类型：", type(json_str))
+# 转成dict对象
+# 会被转换成字典类型
+json_dict = json.loads(json_str)
+print("转换后的类型：", type(json_dict))
+# 遍历字典
+for (k, v) in json_dict.items():
+print(k," : " , v)
+dict字典转json串示例
+# -*- coding:utf-8 -*-
+__author__ = '苦叶子'
+import json
+if __name__ == "__main__":
+print("字典转json串")
+json_dict = {
+"name": "开源优测",
+"url": "www.testingunion.com",
+"id": "DeepTest"
+}
+print("原类型：" , type(json_dict))
+# 将字典转换成json串
+# 会被转换成字符串类型
+json_str = json.dumps(json_dict)
+print("转换后的类型：", type(json_str))
+print(json_str)
+下面我们来看一个复杂的json串，转换后如何进行遍历。
+解析一个复杂的json并遍历所有元素，打印出来：
+# -*- coding:utf-8 -*-
+__author__ = '苦叶子'
+import json
+if __name__ == "__main__":
+print("json串解析高级实例")
+json_demo = """
+{
+"weixin": [
+{
+"name": "开源优测",
+"uid": "DeepTest",
+"desc": "分享开源测试技术"
+},
+{
+"name": "开源优测_demo",
+"uid": "DeepTest_demo",
+"desc": "分享开源测试技术_demo"
+}
+],
+"web": [
+{
+"url": "www.testingunion.com",
+"name": "开源优测社区",
+"desc": "分享各类开源测试技巧"
+},
+{
+"url": "www.testingunion.com_demo",
+"name": "开源优测社区_demo",
+"desc": "分享各类开源测试技巧_demo"
+}
+]
+}
+"""
+# 将json串转换成字典
+json_dict = json.loads(json_demo)
+# 遍历字典
+for (k, v) in json_dict.items():
+# 输出第一层级, k 为 weixin、 web;  v 为 其对应的列表即 [] 中的数据
+print(k,  " : " , v)
+for data in v:
+# 遍历列表
+# v 为 []
+for (data_k, data_v) in data.items():
+# 每个data为[]中的一个字典
+# 遍历列表中的字典
+print("    ",data_k, " : ", data_v)
+对于json的解析，简而言之，就是将其转换成字典，在python中对字典进行操作。3

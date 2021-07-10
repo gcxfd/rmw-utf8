@@ -1,0 +1,5 @@
+snapkit4.0报错
+之前用Xcode8创建的项目，最近更新到了Xcode9，然后在这个项目中用pod 安装了SnapKit4.0.0版本报错
+Constraint.swift:169:41: Argument labels '(rawValue:)' do not match any available overloads
+导致报错的原因是Xcode8创建的项目使用的swift版本默认是swift3.0的，现在Snapkit4.0.0需要swift4.0版本以上
+解决：修改swift version 为4.0

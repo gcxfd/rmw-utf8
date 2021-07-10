@@ -1,0 +1,128 @@
+java并发编程之AbstractQueuedSynchronizer
+AbstractQueuedSynchronizer，队列同步器，简称AQS，它是java并发用来构建锁或者其他同步组件的基础框架。
+一般使用AQS的主要方式是继承，子类通过实现它提供的抽象方法来管理同步状态，主要管理的方式是通过tryAcquire和tryRelease类似的方法来操作状态，同时，AQS提供以下线程安全的方法来对状态进行操作：
+protected final int getState();
+protected final void setState(int newState);
+protected final boolean compareAndSetState(int expect, int update);
+AQS本身是没有实现任何同步接口的，它仅仅只是定义了同步状态的获取和释放的方法来供自定义的同步组件的使用。
+在java的同步组件中，AQS的子类一般是同步组件的静态内部类。
+AQS是实现同步组件的关键，它俩的关系可以这样描述：同步组件是面向使用者的，它定义了使用者与组件交互的接口，隐藏了具体的实现细节；而AQS面向的是同步组件的实现者，它简化了具体的实现方式，屏蔽了线程切换相关底层操作，它们俩一起很好的对使用者和实现者所关注的领域做了一个隔离。
+接下来将从实现的角度来具体分析AQS是如何来完成线程同步的。
+AQS的实现依赖内部的同步队列（FIFO双向队列）来完成同步状态的管理，假如当前线程获取同步状态失败，AQS会将该线程以及等待状态等信息构造成一个Node，并将其加入同步队列，同时阻塞当前线程。当同步状态释放时，唤醒队列的首节点。
+Node主要包含以下成员变量：
+static final class Node {
+volatile int waitStatus;
+volatile Node prev;
+volatile Node next;
+volatile Thread thread;
+Node nextWaiter;
+}
+- ```waitStatus```：节点状态，主要有这几种状态：
+1. ```CANCELLED```：当前线程被取消；
+2. ```SIGNAL```：当前节点的后继节点需要运行；
+3. ```CONDITION```：当前节点在等待condition；
+4. ```PROPAGATE```：当前场景下后续的acquireShared可以执行；
+5. 0：当前节点在sync队列中等待获取锁。
+Node是sync队列和condition队列构建的基础，AQS拥有三个成员变量：
+对于锁的获取，请求形成节点将其挂在队列尾部，至于资源的转移，是从头到尾进行，队列的基本结构就出来了：
+节点插入
+AQS提供基于CAS的设置尾节点的方法：
+需要传递当前线程认为的尾节点和当前节点，设置成功后，当前节点与尾节点建立关联。
+节点删除
+同步队列遵循FIFO，首节点是获取同步状态成功的节点，首节点的线程在释放同步状态之后将会唤醒后继节点，后继节点将会在获取同步状态成功的时候将自己设置为首节点。
+设置首节点是由获取同步状态成功的线程来完成，因为每次只会有一个线程能够成功的获取到同步状态，所以，设置首节点并不需要CAS来保证。
+AQS提供以下接口以供实现自定义同步器：
+独占式获取同步状态，该方法的实现需要先查询当前的同步状态是否可以获取，如果可以获取再进行获取；
+释放状态；
+共享式获取同步状态；
+共享式释放状态；
+独占模式下，判断同步状态是否已经被占用。
+使用者可以根据实际情况使用这些接口自定义同步组件。
+AQS提供两种方式来操作同步状态，独占式与共享式，下面就针对性做一下源码分析。
+具体执行流程如下：
+下面我们具体来看一下节点的构造以及加入同步队列部分的代码实现。
+- 分配引用T指向尾节点；
+- 将待插入节点的prev指针指向尾节点；
+- 如果尾节点还为T，将当前尾节点设置为带待插入节点；
+- T的next指针指向待插入节点。
+enq的逻辑可以确保Node可以有顺序的添加到同步队列中，具体的加入队列的逻辑如下：
+可以看出，整个enq方法通过“死循环”来保证节点的正确插入。
+进入同步队列之后接下来就是同步状态的获取了，或者说是访问控制。对于同步队列中的线程，在同一时刻只能由队列首节点获取同步状态，其他的线程进入等待，直到符合条件才能继续进行。
+在整个方法中，当前线程一直都在“死循环”中尝试获取同步状态：
+从代码的逻辑也可以看出，其实在节点与节点之间在循环检查的过程中是不会相互通信的，仅仅只是判断自己当前的前驱是不是头结点，这样设计使得节点的释放符合FIFO，同时也避免了过早通知。
+注：过早通知是指前驱节点不是头结点的线程由于中断被唤醒。
+对同步状态的操作是原子、非阻塞的，通过AQS提供的对状态访问的方法来对同步状态进行操作，并且利用CAS来确保原子操作；
+一旦线程成功的修改了同步状态，那么该线程会被设置为同步队列的头节点；
+不符合获取同步状态的线程会进入等待状态，直到符合条件被唤醒再开始执行。
+整个执行流程如下：
+当前线程获取同步状态并执行了相应的逻辑之后，就需要释放同步状态，让后续节点可以获取到同步状态，调用方法方法可以释放同步状态。
+取出当前节点的next节点，将该节点线程唤醒，被唤醒的线程获取同步状态。这里主要通过方法唤醒线程。
+共享式获取与独占式获取最主要的区别就是在同一时刻能否有多个线程可以同时获取到同步状态。这两种不同的方式在获取资源区别如下图所示：
+AQS提供方法来支持共享式获取同步状态。
+与独占式获取同步状态一样，共享式获取也是需要释放同步状态的，AQS提供方法可以释放同步状态。
+该方法提供了超时获取同步状态调用，假如在指定的时间段内可以获取到同步状态返回true，否则返回false。它是的增强版。
+该方法提供了获取同步状态的能力，同样，在无法获取同步状态时会进入同步队列，这类似于acquire的功能，但是它和acquire还是区别的：acquireInterruptibly可以在外界对当前线程进行中断的时候可以提前获取到同步状态的操作，换个通俗易懂的解释吧：类似于synchronized获取锁时，这时候外界对当前线程中断了，线程获取锁的这个操作能够及时响应中断并且提前返回。
+该方法在支持中断响应的基础上，增加了超时获取的特性。针对超时获取，主要在于计算出需要睡眠的时间间隔nanosTimeout，如果nanosTimeout > 0表示当前线程还需要睡眠，反之返回false。
+注：为什么不直接进入超时等待呢？原因在于非常短的超时等待是无法做到十分精确的，如果这时候再进入超时等待会让nanosTimeout的超时从整体上表现的不精确，所以，在超时非常短的情况下，AQS都会无条件进入快速自旋；
+- 如果进入超时等待。
+整个流程可以总结如下图所示：
+在上述对AQS进行了实现层面的分析之后，我们就一个案例来加深对AQS的理解。
+设计一个AQS同步器，该工具在同一时刻，只能有两个线程能够访问，其他的线程阻塞。
+方法。
+public class LockInstance implements Lock {
+private final Sync sync = new Sync(2);
+private static final class Sync extends AbstractQueuedSynchronizer {
+Sync(int state) {
+if (state <= 0) {
+throw new IllegalArgumentException("count must large than 0");
+}
+setState(state);
+}
+@Override
+public int tryAcquireShared(int arg) {
+for (;;) {
+System.out.println("try acquire....");
+int current = getState();
+int now = current - arg;
+if (now < 0 || compareAndSetState(current, now)) {
+return now;
+}
+}
+}
+@Override
+public boolean tryReleaseShared(int arg) {
+for(;;) {
+System.out.println("try release....");
+int current = getState();
+int now = current + arg;
+if (compareAndSetState(current, now)) {
+return true;
+}
+}
+}
+}
+@Override
+public void lock() {
+sync.acquireShared(1);
+}
+@Override
+public void lockInterruptibly() throws InterruptedException {
+sync.acquireInterruptibly(1);
+}
+@Override
+public boolean tryLock() {
+return sync.tryAcquireShared(1) >= 0;
+}
+@Override
+public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+return sync.tryAcquireSharedNanos(1, unit.toNanos(time));
+}
+@Override
+public void unlock() {
+sync.tryReleaseShared(1);
+}
+@Override
+public Condition newCondition() {
+return null;
+}
+}

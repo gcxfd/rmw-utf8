@@ -1,0 +1,12 @@
+UItextInput Protocol
+UItextInput是一个protocol，一般来说，文字处理的控件都要遵守这个协议。如。下面介绍一些文字处理的基本概念。
+marked text
+对于多步骤(multistage)的文字输入来说，有一些文字是已经输入在文本框里，却还没有点击确认，这些文字叫做marked text。中文有，日文也比较常见。
+遵守
+如何转化
+func offset(from: UITextPosition, to toPosition: UITextPosition) -> Int
+func textRange(from fromPosition: UITextPosition, to toPosition: UITextPosition) -> UITextRange?
+NSInteger startOffset = [tv offsetFromPosition:tv.beginningOfDocument toPosition:start];
+根据坐标系中点的位置，返回一个包含了点所处的character的
+如果那个位置没有文字，返回nil。
+根据点来找到距离这个点最近的而一个

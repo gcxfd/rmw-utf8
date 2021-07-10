@@ -1,0 +1,1532 @@
+【Java并发002】使用层面：线程同步与线程通信全解析
+本文介绍Java多线程技术，分为五个部分：
+多线程的两种实现方式——继承Thread类和实现Runnable接口；
+线程同步应用：三人吃苹果；
+线程同步+线程通信应用之一：生产者-消费者问题；
+线程同步+线程通信应用之二：打蜡抛光问题；
+线程同步+线程通信之用之三：哲学家就餐问题。
+上小学的时候，语文老师让我们用"一边......,一边......"造句，比如“小明一边吃饭，一边看电视”、“妈妈一边做饭，一边和我闲谈”。那么Java程序中是否可以实现“程序一边xxx一边xxx”呢？答案是肯定，这就是Java的多线程技术
+实现多线程有两种常见的方式，
+1、继承线程类（extends Thread）:某类继承线程类之后，该类成为线程类，拥有独立的线程空间并可以执行;
+2、实现Runnable接口（implements Runnable）:某类实现Runnable接口后，可以实现多线程，注意它不是多线程类，只是具有多线程方法。但是可以满足我们目前的需求就够了。
+值得注意的是，Java的main函数作为程序的入口，本身就是一个Main线程，我们可以将该线程作为一个游戏线程，然后只需要新建一个MusicThread类就够了。
+代码：
+package mypackage;
+public class MainThread {
+public static void main(String[] args) {
+new MusicThread().start();
+for (int i = 0; i < 3; i++) {
+System.out.println("Playing ComputerGame  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+class MusicThread extends Thread {
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Listening Music  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+输出：
+Playing ComputerGame  0
+Listening Music  0
+Playing ComputerGame  1
+Listening Music  1
+Playing ComputerGame  2
+Listening Music  2
+注意：Thread.Sleep(1000) 睡眠一秒钟是为了让多线程交替执行的效果在控制台打印出来，如果没有这句，可能出现某个线程执行完后另一个线程才开始执行，无法给读者展示多线程"一边xxx一边xxx"的效果。
+如果要再扩展一个线程也很简单，来看代码。
+代码：
+package mypackage1;
+public class MainThread {
+public static void main(String[] args) {
+new MusicThread().start();
+new QQThread().start();
+for (int i = 0; i < 3; i++) {
+System.out.println("Playing ComputerGame  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+class MusicThread extends Thread {
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Listening Music  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+class QQThread extends Thread{
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Chating in QQ  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+输出：
+Listening Music  0
+Playing ComputerGame  0
+Chating in QQ  0
+Listening Music  1
+Playing ComputerGame  1
+Chating in QQ  1
+Listening Music  2
+Playing ComputerGame  2
+Chating in QQ  2
+相对上面，扩展了QQThread，用于qq聊天，可以看到，要新增一个新的线程类也是很容易的。
+代码：
+package mypackage2;
+public class MainThread {
+public static void main(String[] args) {
+new Thread(new MusicRunnableImpl()).start();
+new Thread(new QQRunnableImpl()).start();
+for (int i = 0; i < 3; i++) {
+System.out.println("Playing ComputerGame  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+class MusicRunnableImpl implements Runnable {
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Listening Music  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+class QQRunnableImpl implements Runnable{
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Chating in QQ  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+输出：
+Playing ComputerGame  0
+Chating in QQ  0
+Listening Music  0
+Listening Music  1
+Playing ComputerGame  1
+Chating in QQ  1
+Listening Music  2
+Chating in QQ  2
+Playing ComputerGame  2
+这里通过实现Runnable接口，实现多线程，是实现多线程的另一种常见方式。
+代码——匿名方式的Thread类：
+package package3;
+public class MainThread {
+public static void main(String[] args) {
+new Thread(){
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Listening Music  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}.start();
+new Thread(){
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Chating in QQ  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}.start();
+for (int i = 0; i < 3; i++) {
+System.out.println("Playing ComputerGame  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+输出：
+Listening Music  0
+Playing ComputerGame  0
+Chating in QQ  0
+Listening Music  1
+Playing ComputerGame  1
+Chating in QQ  1
+Listening Music  2
+Playing ComputerGame  2
+Chating in QQ  2
+代码：
+package mypackage4;
+public class MainThread {
+public static void main(String[] args) {
+new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Listening Music  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}).start();
+new Thread(new Runnable() {
+@Override
+public void run() {
+for (int i = 0; i < 3; i++) {
+System.out.println("Chating in QQ  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}).start();
+for (int i = 0; i < 3; i++) {
+System.out.println("Playing ComputerGame  " + i);
+try {
+Thread.sleep(1000); // 这里Sleep() 让线程交互明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+}
+输出：
+Listening Music  0
+Playing ComputerGame  0
+Chating in QQ  0
+Playing ComputerGame  1
+Chating in QQ  1
+Listening Music  1
+Chating in QQ  2
+Playing ComputerGame  2
+Listening Music  2
+多线程在默认的Main线程中额外添加一个或多个线程对象并执行，提供了一种将单一线程程序中无法解决的并发问题完美解决的方案，在实际项目开发中应用广泛。多线程是Java语言的又一特色。
+多个线程访问同一资源，如我们来讨论一下“三人吃苹果”的例子。
+上一节我们说到，实现多线程常见的有两种方式，继承Threads和实现Runnable接口，这里我们两种方式都尝试一样，先看继承Threads类：
+代码：
+public class Test {
+public static void main(String[] args) {
+new Apple().start();
+new Apple().start();
+new Apple().start();
+}
+}
+// 继承线程类 num 为每个Person对象的内部变量 不能共享
+class Apple extends Thread {
+private int num = 5;
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (num > 0) {
+System.out.println(Thread.currentThread().getName() + "吃了编号为      " + (num--) + "   的苹果");
+}
+}
+}
+}
+输出：
+Thread-1吃了编号为      5   的苹果
+Thread-2吃了编号为      5   的苹果
+Thread-0吃了编号为      5   的苹果
+Thread-2吃了编号为      4   的苹果
+Thread-1吃了编号为      4   的苹果
+Thread-2吃了编号为      3   的苹果
+Thread-2吃了编号为      2   的苹果
+Thread-2吃了编号为      1   的苹果
+Thread-0吃了编号为      4   的苹果
+Thread-1吃了编号为      3   的苹果
+Thread-1吃了编号为      2   的苹果
+Thread-0吃了编号为      3   的苹果
+Thread-1吃了编号为      1   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-0吃了编号为      1   的苹果
+小结：我们看到每个苹果被吃了三次，这是为什么呢？原来，我们在客户端新建三个独立的Apple类对象，每一个Apple都有一个私有的num变量，三个线程都在吃自己的苹果，然后num--。在这个过程中，苹果是独立的而不是共享的，这显然不是我们所需要的情况。
+让我们尝试使用实现Runnable接口完成这个“三人吃苹果”问题。
+代码：
+public class Test {
+public static void main(String[] args) {
+Apple apple=new Apple();  //虽然三个线程   但是使用同一个apple引用
+new Thread(apple,"Thread-0").start();
+new Thread(apple,"Thread-1").start();
+new Thread(apple,"Thread-2").start();
+}
+}
+//实现Runnable接口   只是多线程方法  不是多线程类   所有    num变量可以让Person对象共享
+class Apple implements Runnable{
+private int num=5;
+@Override
+public void run() {
+for (int i=0;i<5;i++){
+if (num>0) {
+System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num--)+"   的苹果");
+}
+}
+}
+}
+输出：
+Thread-0吃了编号为      5   的苹果
+Thread-1吃了编号为      4   的苹果
+Thread-2吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-1吃了编号为      1   的苹果
+小结：乍看之下好像没有任何问题，
+从代码上来看，客户端仅新建一个Apple对象，然后将它的引用传递给三个线程对象，这样就实现了的三个线程类对苹果的共享；
+从输出结果上来看，被吃掉的苹果的序号为 5 4 3 2 1 ，如何的完美，而且是被三个线程Thread-0,Thread-1,Thread-2,“三人吃苹果”的故事似乎完结了。
+实则不然，这里只是因为num=5,数值太小，加上我们运气比较好，恰好获得了一次看上去完美的输出结果。程序再运行几次：
+Thread-0吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-0吃了编号为      1   的苹果
+Thread-1吃了编号为      5   的苹果
+Thread-2吃了编号为      4   的苹果
+咦，为什么最先吃掉了编号为3的苹果，其他苹果的顺序也变乱了，再运行一次：
+Thread-0吃了编号为      4   的苹果
+Thread-0吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-1吃了编号为      5   的苹果
+Thread-2吃了编号为      5   的苹果
+Thread-0吃了编号为      1   的苹果
+这一次更糟糕了，不仅吃苹果的顺序变乱了，而且编号为5的苹果竟然被吃了两次
+其实我们还可以让程序更乱一些：加上Thread.sleep(毫秒数)
+注意：Java多线程的最常见的两种实现方式：继承Thread类和实现Runnable接口，其异同我们在这里看出来了
+代码：
+public class Test {
+public static void main(String[] args) {
+Apple apple=new Apple();  //虽然三个线程   但是使用同一个apple引用
+new Thread(apple,"Thread-0").start();
+new Thread(apple,"Thread-1").start();
+new Thread(apple,"Thread-2").start();
+}
+}
+//实现Runnable接口   只是多线程方法  不是多线程类   所有    num变量可以让Person对象共享
+class Apple implements Runnable{
+private int num=5;
+@Override
+public void run() {
+for (int i=0;i<5;i++){
+try {
+Thread.sleep(1000);
+} catch (InterruptedException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+}
+if (num>0) {
+System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num--)+"   的苹果");
+}
+}
+}
+}
+喔喔喔，这次更是千奇百怪的答案，基本没有一次对的，为什么会这样呢？这样解决呢？
+解答：这个问题是因为多线程程序运行的随机性造成的，只要使用相应的互斥同步机制就好了。
+对于三人吃苹果问题，我们通过实现Runnable接口，三人共享5个苹果，但是出现一个苹果吃多次的情况，这不满足的业务需求。其原因是因为每个人吃苹果不是一个原子操作：即System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num--)+"   的苹果");可以拆分为两句，如下：
+System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num)+"   的苹果");
+num--;
+这两句不是原子操作，可以被打断。
+使用Java线程同步的方式解决，线程的同步机制有三种：同步代码块、同步方法和lock锁机制
+代码：
+//同步代码块/同步方法/lock机制
+public class Test {
+public static void main(String[] args) {
+Apple apple=new Apple();  //虽然三个线程   但是使用同一个apple引用
+new Thread(apple,"Thread-0").start();
+new Thread(apple,"Thread-1").start();
+new Thread(apple,"Thread-2").start();
+}
+}
+//实现Runnable接口   只是多线程方法  不是多线程类   所有    num变量可以让Person对象共享
+class Apple implements Runnable{
+private int num=5;
+@Override
+public void run() {
+for (int i=0;i<5;i++){
+synchronized (this) {
+try {
+Thread.sleep(1000);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+if (num>0) {
+System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num--)+"   的苹果");
+}
+}
+}
+}
+}
+输出：
+Thread-0吃了编号为      5   的苹果
+Thread-0吃了编号为      4   的苹果
+Thread-0吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-0吃了编号为      1   的苹果
+小结：即使多次运行，输出结果仍是这样有条不紊。这是为什么呢？
+原来我们在代码2中的出现的问题（打印的编号顺序错乱，同一苹果被吃掉两次）均是因为某一线程运行时System.out.prinln()和num--不能同时运行，中间有间断，这一间断中，其他线程又执行了System.out.prinln和num--,才出现各种错乱问题。
+特别是加入Thread.sleep()方法后，Thread.sleep  System.out.prinln  num--  三者不能一起执行，各个出错
+现在，因为我们程序中加入了synchronized关键字，这是线程同步的关键字，如代码4中，synchronized关键字后面的花括号将Thread.sleep(1000)和System.out.println(num--)包裹起来，意思就是将它们打包，放在一起作为原子操作，要么两个一起执行，要么都不执行，从根本上杜绝了Thread.sleep  System.out.prinln  num-- 一套操作被打断的可能，所以保证了多线程的安全。
+附：为什么synchronized后面有一个小括号，里面还有一个this呢？
+解答：这就是同步锁对象，是同步代码块得以成功实现线程同步的必要条件，因为在任何时候,最多允许一个线程拥有同步锁,谁拿到锁就进入代码块,其他的线程只能在外等着。
+注意1： 对于非static方法,同步锁就是this；对于static方法,我们使用当前方法所在类的字节码对象(Apple.class).
+注意2：Java程序运行使用任何对象作为同步监听对象,但是一般的,我们把当前并发访问的共同资源作为同步监听对象.
+让我们再来看看其他两种方法：同步方法和同步代码块吧！
+代码：
+public class Test {
+public static void main(String[] args) {
+Apple apple = new Apple(); // 虽然三个线程 但是使用同一个apple引用
+new Thread(apple, "Thread-0").start();
+new Thread(apple, "Thread-1").start();
+new Thread(apple, "Thread-2").start();
+}
+}
+// 实现Runnable接口 只是多线程方法 不是多线程类 所有 num变量可以让Person对象共享
+class Apple implements Runnable {
+private int num = 5;
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+eat();
+}
+}
+private synchronized void eat() {
+try {
+Thread.sleep(1000);
+} catch (InterruptedException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+}
+if (num > 0) {
+System.out.println(Thread.currentThread().getName() + "吃了编号为      " + (num--) + "   的苹果");
+}
+}
+}
+输出：
+Thread-0吃了编号为      5   的苹果
+Thread-0吃了编号为      4   的苹果
+Thread-0吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-0吃了编号为      1   的苹果
+小结：当我们把synchronized关键字放在方法名上，同样达到了我们多线程安全的效果。
+注意1：synchronized范围越大，效率越低
+注意2：synchronized 范围内的操作的原子性只对其他synchronized方法或块有用，对非synchronized方法或块没有用；即synchronized只是保证其他synchronized方法不打断当前synchronized操作，不保证其他非synchronized方法或块不打断当前synchronized操作。其实，读者担心synchronized被非synchronized打断是不是一种风险，其实不用担心，因为既然它是非synchronized,就是说明它访问变量和当前的synchronized访问的变量在业务逻辑上基本没有关系，打断就打断呗，如果业务上有逻辑关系，影响到业务了，就给非synchronized方法或块加上synchronized，就防止打断了，就是这么简单！
+代码：
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class Test {
+public static void main(String[] args) {
+Apple apple = new Apple(); // 虽然三个线程 但是使用同一个apple引用
+new Thread(apple, "Thread-0").start();
+new Thread(apple, "Thread-1").start();
+new Thread(apple, "Thread-2").start();
+}
+}
+// 实现Runnable接口 只是多线程方法 不是多线程类 所有 num变量可以让Person对象共享
+class Apple implements Runnable {
+private int num = 5;
+private  final Lock _lock=new ReentrantLock();
+@Override
+public void run() {
+for (int i=0;i<5;i++){
+_lock.lock();
+try {
+Thread.sleep(1000);
+if (num>0) {
+System.out.println(Thread.currentThread().getName()+"吃了编号为      "+(num--)+"   的苹果");
+}
+}catch (InterruptedException e) {
+e.printStackTrace();
+}finally {
+_lock.unlock();
+}
+}
+}
+}
+输出：
+Thread-0吃了编号为      5   的苹果
+Thread-0吃了编号为      4   的苹果
+Thread-0吃了编号为      3   的苹果
+Thread-0吃了编号为      2   的苹果
+Thread-0吃了编号为      1   的苹果
+小结：使用lock机制和使用synchronized关键字达到了相同的效果，它们的原理是一样的吗？其实不是，具体的关于synchronized和lock的底层实现，笔者在其他博客中再去阐述。
+截至现在，我们搞懂了“三人吃苹果”问题中，三个线程访问同一资源类对象，修改其内部num变量，注意两点：
+1、资源对象实现Runnable接口而不是继承Thread，因为继承Thread类新建的对象不好引用；
+2、要使用相应的同步机制（同步代码块、同步方法、lock锁机制）保证线程安全，正确执行。
+上一节，我们说到，“三人吃苹果”实际上是三个线程都在消费Apple类中num属性，每消费一次，num--。
+本文中加上生产者，生产线程Producer生产苹果Apple，消费线程Consumer消费苹果Apple。
+实现方式一代码：
+//生产者
+class  Producer{
+private  Consumer  con;//消费者对象
+}
+//消费者
+class  Consumer{
+private  Producer  pro;//消费者对象
+}
+该代码使用双向注入，将消费者引用注入
+代码：
+package mypackage;
+public class Test {
+public static void main(String[] args) {
+ShareResources shareResources = new ShareResources();
+new Thread(new Producer(shareResources)).start();
+new Thread(new Consumer(shareResources)).start();
+}
+}
+class Producer implements Runnable {
+private ShareResources shareResources = null;
+public Producer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+shareResources.push("春哥哥", "男");
+} else {
+shareResources.push("凤姐", "女");
+}
+}
+}
+}
+class Consumer implements Runnable {
+private ShareResources shareResources = null;
+public Consumer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+shareResources.pop();
+}
+}
+}
+class ShareResources {
+private String name;
+private String gender;
+public void push(String name, String gender) {
+this.name = name;
+try {
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+} catch (InterruptedException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+}
+this.gender = gender;
+}
+public void pop() {
+System.out.print(this.name + " - ");
+try {
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+System.out.println(this.gender);
+}
+}
+输出：
+春哥哥 - null
+凤姐 - 男
+凤姐 - 男
+凤姐 - 男
+春哥哥 - 女
+问题（1）：性别紊乱问题？
+解决（1）：这是因为打印的时候没有原子性操作，可以使用synchronized或lock机制解决
+问题（2）：“春哥哥 - 男”  “凤姐 - 女” 没有按照 0==i%2 循环交替出现？
+解决（2）：没有实现合理的线程通信，可以使用 wait()-notifyAll() 或者 await()-signalAll() 解决
+代码：
+package mypackage_synchronized实现线程同步;
+public class Test {
+public static void main(String[] args) {
+ShareResources shareResources = new ShareResources();
+new Thread(new Producer(shareResources)).start();
+new Thread(new Consumer(shareResources)).start();
+}
+}
+class Producer implements Runnable {
+private ShareResources shareResources = null;
+public Producer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+shareResources.push("春哥哥", "男");
+} else {
+shareResources.push("凤姐", "女");
+}
+}
+}
+}
+class Consumer implements Runnable {
+private ShareResources shareResources = null;
+public Consumer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+shareResources.pop();
+}
+}
+}
+class ShareResources {
+private String name;
+private String gender;
+public synchronized void push(String name, String gender) {
+this.name = name;
+try {
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+} catch (InterruptedException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+}
+this.gender = gender;
+}
+public synchronized void pop() {
+System.out.print(this.name + " - ");
+try {
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+} catch (InterruptedException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+}
+System.out.println(this.gender);
+}
+}
+输出：
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+小结：不会再出现性别紊乱问题，因为push()和pop()已经实现原子操作，但是还是没有实现0==i%2  交替打印，且看4.2.3。
+代码：
+package mypackage_synchronized_wait_notify;
+public class Test {
+public static void main(String[] args) {
+ShareResources shareResources = new ShareResources();
+new Thread(new Producer(shareResources)).start();
+new Thread(new Consumer(shareResources)).start();
+}
+}
+class Producer implements Runnable {
+private ShareResources shareResources = null;
+public Producer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+shareResources.push("春哥哥", "男");
+} else {
+shareResources.push("凤姐", "女");
+}
+}
+}
+}
+class Consumer implements Runnable {
+private ShareResources shareResources = null;
+public Consumer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+shareResources.pop();
+}
+}
+}
+class ShareResources {
+private String name;
+private String gender;
+private boolean isEmpty = true;// 初始的时候资源池为空
+public synchronized void push(String name, String gender) {
+try {
+while (!isEmpty) { // 资源池非空状态下 push要一直等待
+wait();
+}
+this.name = name;
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+this.gender = gender;
+isEmpty = false; // 资源池不为空了，修改标志位的值
+notifyAll(); // notify()唤醒一个，notifyAll()唤醒所有，本程序中只有一个生产者和消费者对象，所以notify()和notifyAll()是一样的
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public synchronized void pop() {
+try {
+while (isEmpty) { // 当资源池为空时，pop()方法一直等待
+wait();
+}
+System.out.print(this.name + " - ");
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+System.out.println(this.gender);
+isEmpty = true; // 资源被消费掉，资源池为空，重新设置标志位
+notifyAll();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+输出：
+春哥哥 - 男
+凤姐 - 女
+春哥哥 - 男
+凤姐 - 女
+春哥哥 - 男
+小结：synchronize+标志位+wait()+notifyAll() 实现线程同步与线程通信，解决好了生产者与消费者问题。我们可以尝试使用lock+标志位+await()+signalAll() 再实现一次，即更换一种方式实现生产者消费者问题，且看4.3.1 和4.3.2 。
+代码：
+package mypackage_lock机制实现线程同步;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class Test {
+public static void main(String[] args) {
+ShareResources shareResources = new ShareResources();
+new Thread(new Producer(shareResources)).start();
+new Thread(new Consumer(shareResources)).start();
+}
+}
+class Producer implements Runnable {
+private ShareResources shareResources = null;
+public Producer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+shareResources.push("春哥哥", "男");
+} else {
+shareResources.push("凤姐", "女");
+}
+}
+}
+}
+class Consumer implements Runnable {
+private ShareResources shareResources = null;
+public Consumer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+shareResources.pop();
+}
+}
+}
+class ShareResources {
+private String name;
+private String gender;
+private final Lock lock = new ReentrantLock();
+public void push(String name, String gender) {
+lock.lock();
+try {
+this.name = name;
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+this.gender = gender;
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+public void pop() {
+lock.lock();
+try {
+System.out.print(this.name + " - ");
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+System.out.println(this.gender);
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+}
+输出：
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+春哥哥 - 男
+小结：不会再出现性别紊乱问题，因为push()和pop()已经实现原子操作，但是还是没有实现0==i%2  交替打印，且看4.3.2 。
+代码：
+package mypackage_lock_await_signal;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class Test {
+public static void main(String[] args) {
+ShareResources shareResources = new ShareResources();
+new Thread(new Producer(shareResources)).start();
+new Thread(new Consumer(shareResources)).start();
+}
+}
+class Producer implements Runnable {
+private ShareResources shareResources = null;
+public Producer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+shareResources.push("春哥哥", "男");
+} else {
+shareResources.push("凤姐", "女");
+}
+}
+}
+}
+class Consumer implements Runnable {
+private ShareResources shareResources = null;
+public Consumer(ShareResources shareResources) {
+this.shareResources = shareResources;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+shareResources.pop();
+}
+}
+}
+class ShareResources {
+private String name;
+private String gender;
+private Lock lock = new ReentrantLock();
+private Condition condition = lock.newCondition();
+private boolean isEmpty = true;// 初始的时候资源池为空
+public void push(String name, String gender) {
+lock.lock();
+try {
+while (!isEmpty) { // 资源池非空状态下 push要一直等待
+condition.await();
+}
+this.name = name;
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+this.gender = gender;
+isEmpty = false; // 资源池不为空了，修改标志位的值
+condition.signalAll(); // notify()唤醒一个，notifyAll()唤醒所有，本程序中只有一个生产者和消费者对象，所以notify()和notifyAll()是一样的
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+public void pop() {
+lock.lock();
+try {
+while (isEmpty) { // 当资源池为空时，pop()方法一直等待
+condition.await();
+}
+System.out.print(this.name + " - ");
+Thread.sleep(10); // 使线程不安全的问题的暴露的更加明显
+System.out.println(this.gender);
+isEmpty = true; // 资源被消费掉，资源池为空，重新设置标志位
+condition.signalAll();
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+}
+输出：
+春哥哥 - 男
+凤姐 - 女
+春哥哥 - 男
+凤姐 - 女
+春哥哥 - 男
+小结：lock+标志位+await()+signalAll() 实现线程同步与线程通信，解决好了生产者与消费者问题
+附： 其实我们只要用标志位（如上boolean isEmpty）控制，就可以控制线程的通信了，为什么还要加上wait()-notify()/notifyAll()或者lock+await()+signal()/signalAll()这样的东西呢？
+代码a:
+while (!isEmpty) {      wait(); }
+代码b:
+while (!isEmpty);
+从逻辑上讲，代码a和代码b是一样的，都是在等待isEmpty=true，才能跳出循环，区别在于代码a执行了wait()/condition.await()函数，这个函数使当前线程处于waiting()等待状态，JVM把当前线程存在对象等待池中，不占用cpu,不消耗系统资源；如果向代码b，当前线程处于running运行状态，占用Cpu，消耗系统资源。因为代码b使线程无论运行还是等待都处于running运行状态，过多的消耗系统资源，不利于程序执行；故我们的程序都写成的代码a的形式，线程通信中线程等待时，处于waiting状态，当然后果是要加上配套的notify()/notifyAll()或者condition.signal()/condition.signalAll()方法。
+从“生产者消费者问题”中，我们同时学习到线程同步和线程通信的知识，我们来总结一下，处理方式有两种，如下表：
+延续上一篇文章的生产者-消费者问题，为了让读者更好的理解“线程同步+线程通信”，本节再给出一个类似的线程同步+线程通信问题——打蜡抛光问题。
+需求：汽车有“轿车”和“SUV”两种，都是“打蜡-抛光”反复操作，且看代码。
+代码——打蜡抛光问题：
+package mypackage;
+public class Test {
+public static void main(String[] args) {
+Car car = new Car();
+new Thread(new WaxOn(car)).start();
+new Thread(new WaxOff(car)).start();
+}
+}
+// 共享资源类
+class Car {
+public void waxed(String name) { // 打蜡函数
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax On");
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public void buffed(String name) { // 抛光函数
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax Off");
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+}
+// 打蜡类 生产者类
+class WaxOn implements Runnable {
+private Car car;
+public WaxOn(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.waxed("小轿车");
+} else {
+car.waxed("SUV");
+}
+}
+}
+}
+// 抛光类 消费者类
+class WaxOff implements Runnable {
+private Car car;
+public WaxOff(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.buffed("小轿车");
+} else {
+car.buffed("SUV");
+}
+}
+}
+}
+输出：
+小轿车 - 小轿车 - Wax Off
+Wax On
+SUV - SUV - Wax Off
+小轿车 - Wax On
+小轿车 - Wax Off
+Wax On
+SUV - SUV - Wax Off
+Wax On
+小轿车 - 小轿车 - Wax Off
+Wax On
+小结：出现两个问题，既没有实现 车型和 Wax 的对齐打印，也没有实现 0==i%2 的WaxOn和WaxOff交替打印，既没有实现线程同步，也没有实现线程通信，我们使用synchronized+标志位+wait()+notify()/notifyAll()  和  lock+标志位+await()+signal()/signalAll()  组合来解决这个问题，且看 5.2  5.3。
+代码：
+package mypackage_synchronized;
+public class Test {
+public static void main(String[] args) {
+Car car = new Car();
+new Thread(new WaxOn(car)).start();
+new Thread(new WaxOff(car)).start();
+}
+}
+// 共享资源类
+class Car {
+public synchronized void waxed(String name) { // 打蜡函数
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax On");
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public synchronized void buffed(String name) { // 抛光函数
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax Off");
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+}
+// 打蜡类 生产者类
+class WaxOn implements Runnable {
+private Car car;
+public WaxOn(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.waxed("小轿车");
+} else {
+car.waxed("SUV");
+}
+}
+}
+}
+// 抛光类 消费者类
+class WaxOff implements Runnable {
+private Car car;
+public WaxOff(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.buffed("小轿车");
+} else {
+car.buffed("SUV");
+}
+}
+}
+}
+输出：
+小轿车 - Wax On
+SUV - Wax On
+小轿车 - Wax On
+SUV - Wax On
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax Off
+小轿车 - Wax Off
+SUV - Wax Off
+小轿车 - Wax Off
+小结：synchronized实现线程同步，原子性打印，所以 车型 和 Wax 对齐打印实现了，但是没有实现 线程通信，WaxOn和WaxOff交替打印，且看5.2.2 。
+代码：
+package mypackage_synchronized_wait_notify;
+public class Test {
+public static void main(String[] args) {
+Car car = new Car();
+new Thread(new WaxOn(car)).start();
+new Thread(new WaxOff(car)).start();
+}
+}
+// 共享资源类
+class Car {
+private boolean waxOn = false;// 初始为未打蜡 线程通信控制变量
+public synchronized void waxed(String name) { // 打蜡函数
+try {
+while (waxOn == true) // 当未抛光的时候 ,不断等待，直到抛光完成，结束等待，退出函数
+wait();
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax On");
+waxOn = true;
+notifyAll();
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public synchronized void buffed(String name) { // 抛光函数
+try {
+while (waxOn == false) // 当未打蜡的时候 ,不断等待，直到打蜡完成，结束等待，退出函数
+wait();
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax Off");
+waxOn = false;
+notifyAll();
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+}
+// 打蜡类 生产者类
+class WaxOn implements Runnable {
+private Car car;
+public WaxOn(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.waxed("小轿车");
+} else {
+car.waxed("SUV");
+}
+}
+}
+}
+// 抛光类 消费者类
+class WaxOff implements Runnable {
+private Car car;
+public WaxOff(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.buffed("小轿车");
+} else {
+car.buffed("SUV");
+}
+}
+}
+}
+输出：
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax On
+SUV - Wax Off
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax On
+SUV - Wax Off
+小轿车 - Wax On
+小轿车 - Wax Off
+小结：synchronize+wait()+notifyAll() 实现线程同步与线程通信，解决好了“汽车打蜡抛光”问题。我们可以尝试使用lock+await()+signalAll() 再实现一次，即更换一种方式实现“汽车打蜡抛光”问题，且看5.3.1  5.3.2。
+代码：
+package mypackage_lock;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class Test {
+public static void main(String[] args) {
+Car car = new Car();
+new Thread(new WaxOn(car)).start();
+new Thread(new WaxOff(car)).start();
+}
+}
+// 共享资源类
+class Car {
+private final Lock lock = new ReentrantLock();
+public void waxed(String name) { // 打蜡函数
+lock.lock();
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax On");
+} catch (InterruptedException e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+public void buffed(String name) { // 抛光函数
+lock.lock();
+try {
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax Off");
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+}
+// 打蜡类 生产者类
+class WaxOn implements Runnable {
+private Car car;
+public WaxOn(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.waxed("小轿车");
+} else {
+car.waxed("SUV");
+}
+}
+}
+}
+// 抛光类 消费者类
+class WaxOff implements Runnable {
+private Car car;
+public WaxOff(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.buffed("小轿车");
+} else {
+car.buffed("SUV");
+}
+}
+}
+}
+输出：
+小轿车 - Wax On
+SUV - Wax On
+小轿车 - Wax On
+SUV - Wax On
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax Off
+小轿车 - Wax Off
+SUV - Wax Off
+小轿车 - Wax Off
+小结：不会再出现车型---Wax对齐不上问题，因为waxed()和buffed()已经实现原子操作，但是还是没有实现0==i%2  交替打印，且看5.3.2 。
+代码：
+package mypackage_lock_await_signal;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class Test {
+public static void main(String[] args) {
+Car car = new Car();
+new Thread(new WaxOn(car)).start();
+new Thread(new WaxOff(car)).start();
+}
+}
+// 共享资源类
+class Car {
+private boolean waxOn = false;// 初始为未打蜡 线程通信控制变量
+private final Lock lock = new ReentrantLock();
+private Condition condition = lock.newCondition();
+public void waxed(String name) { // 打蜡函数
+lock.lock();
+try {
+while (waxOn == true) // 当未抛光的时候 ,不断等待，直到抛光完成，结束等待，退出函数
+condition.await();
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax On");
+waxOn = true;
+condition.signalAll();
+} catch (InterruptedException e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+public void buffed(String name) { // 抛光函数
+lock.lock();
+try {
+while (waxOn == false) // 当未打蜡的时候 ,不断等待，直到打蜡完成，结束等待，退出函数
+condition.await();
+System.out.print(name + " - ");
+Thread.sleep(10);
+System.out.println("Wax Off");
+waxOn = false;
+condition.signalAll();
+} catch (Exception e) {
+e.printStackTrace();
+} finally {
+lock.unlock();
+}
+}
+}
+// 打蜡类 生产者类
+class WaxOn implements Runnable {
+private Car car;
+public WaxOn(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.waxed("小轿车");
+} else {
+car.waxed("SUV");
+}
+}
+}
+}
+// 抛光类 消费者类
+class WaxOff implements Runnable {
+private Car car;
+public WaxOff(Car car) {
+this.car = car;
+}
+@Override
+public void run() {
+for (int i = 0; i < 5; i++) {
+if (0 == i % 2) {
+car.buffed("小轿车");
+} else {
+car.buffed("SUV");
+}
+}
+}
+}
+输出5：
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax On
+SUV - Wax Off
+小轿车 - Wax On
+小轿车 - Wax Off
+SUV - Wax On
+SUV - Wax Off
+小轿车 - Wax On
+小轿车 - Wax Off
+小结：lock+await()+signalAll() 实现线程同步与线程通信，解决好了“汽车打蜡抛光”问题
+本文的“打蜡抛光”问题和“生产者--消费者”问题非常相似，或者可以说是同一问题，即使用synchronized+标志位+wait()+notify()/notifyAll()或者lock+标志位+await()+signal()/signalAll()，实现线程同步+线程通信。
+（1）死锁定义：死锁是指两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞的现象，若无外力作用，它们都将无法推进下去。
+（2）死锁问题的四个条件：
+：这四个条件是死锁的必要条件，只要系统发生死锁，这些条件必然成立。
+Java语言中，因为Java在设计时，JVM不检测也不试图避免这种情况,所以死锁无法在语言层上得到根本性解决,只能由程序员每次写程序时注意避免。
+下面开始介绍死锁的经典问题——哲学家进餐问题：
+有五个哲学家，他们的生活方式是交替地进行思考和进餐，哲学家们共用一张圆桌，分别坐在周围的五张椅子上，在圆桌上有五个碗和五支筷子，平时哲学家进行思考，饥饿时便试图取其左、右最靠近他的筷子，只有在他拿到两支筷子时才能进餐，该哲学家进餐完毕后，放下左右两只筷子又继续思考。
+(1)只有拿到两只筷子时，哲学家才能吃饭。
+(2)如果筷子已被别人拿走，则必须等别人吃完之后才能拿到筷子。
+(3)任一哲学家在自己未拿到两只筷子吃完饭前，不会放下手中已经拿到的筷子
+只要使用synchronized 或者lock   将 "拿起左右两只筷子"和“放下左右两只筷子” 封装为原子操作，再使用 wait()--notifyAll() 或者  await()--signalAll()   实现哲学家之间（生产者消费者之间）的通信，整个问题就解决。
+synchronized+wait()+notifyAll()   和   lock+await()+signalAll()
+本文给出两种哲学家进餐问题的解决方案，且看6.2  6.3。
+代码——synchronize+wait()+notifyAll() 实现哲学家就餐问题：
+package mypackage_synchronized_wati_notify;
+//哲学家就餐问题  解决  每个哲学既是消费者（拿起左右两只筷子）  又是消费者（放下左右两只筷子）
+//只要使用synchronized 或者lock   将 "拿起左右两只筷子"和“放下左右两只筷子” 封装为原子操作
+//再使用 wait()--notifyAll() 或者  await()--signalAll()   实现哲学家之间（生产者消费者之间）的通信   整个问题就解决了
+//所有两种方式   synchronized+wait()+notifyAll()   和   lock+await()+signalAll()
+public class Test {
+public static void main(String[] args) {
+Chopsticks fork = new Chopsticks();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+}
+}
+class Philosopher implements Runnable { // 既是生产者又是消费者
+private Chopsticks _chopsticks;
+public Philosopher(Chopsticks _chopsticks) {
+this._chopsticks = _chopsticks;
+}
+@Override
+public void run() {
+while (true) {
+thinking();
+// eating 是关键代码 eating之前要锁住筷子 eating之后释放筷子
+{
+_chopsticks.lockChopSticks();
+eating();
+_chopsticks.unlockChopSticks();
+}
+}
+}
+public void eating() {
+System.out.println("Number : " + Thread.currentThread().getName() + " Eating!");
+try {
+Thread.sleep(1000);// 模拟吃饭，占用一段时间资源
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public void thinking() {
+System.out.println("Number : " + Thread.currentThread().getName() + " Thinking!");
+try {
+Thread.sleep(1000);// 模拟思考
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+class Chopsticks {
+private boolean[] _islock = { false, false, false, false, false, false };// 一共五个筷子，使用时被锁住，默认都是没有被锁住的
+public synchronized void lockChopSticks() {
+String name = Thread.currentThread().getName();
+int i = Integer.parseInt(name.substring(name.length() - 1, name.length()));// i用于数组
+while (_islock[i] || _islock[(i + 1) % 5]) {
+try {
+wait();// 如果左右手有一只正被使用，等待
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+_islock[i] = true;
+_islock[(i + 1) % 5] = true;
+}
+public synchronized void unlockChopSticks() {
+String name = Thread.currentThread().getName();
+int i = Integer.parseInt(name.substring(name.length() - 1, name.length()));// i用于数组
+_islock[i] = false;
+_islock[(i + 1) % 5] = false;
+notifyAll();// 唤醒其他线程
+}
+}
+输出：
+Number : Thread-1 Thinking!
+Number : Thread-2 Thinking!
+Number : Thread-3 Thinking!
+Number : Thread-0 Thinking!
+Number : Thread-4 Thinking!
+Number : Thread-0 Eating!
+Number : Thread-2 Eating!
+Number : Thread-0 Thinking!
+Number : Thread-3 Eating!
+Number : Thread-1 Eating!
+Number : Thread-2 Thinking!
+Number : Thread-1 Thinking!
+Number : Thread-2 Eating!
+Number : Thread-3 Thinking!
+Number : Thread-0 Eating!
+小结：synchronize+标志位数组+wait()+notifyAll() 实现线程同步和线程通信，完美的解决了哲学家进餐问题，下面我们再尝试使用lock+await()+signalAll() 实现哲学家进餐问题，且看代码6.3 。
+代码——lock+await()+signalAll() 实现哲学家就餐问题：
+package mypackage_lock_await_signal;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+//哲学家就餐问题  解决  每个哲学既是消费者（拿起左右两只筷子）  又是消费者（放下左右两只筷子）
+//只要使用synchronized 或者lock   将 "拿起左右两只筷子"和“放下左右两只筷子” 封装为原子操作
+//再使用 wait()--notifyAll() 或者  await()--signalAll()   实现哲学家之间（生产者消费者之间）的通信   整个问题就解决了
+//所有两种方式   synchronized+wait()+notifyAll()   和   lock+await()+signalAll()
+public class Test {
+public static void main(String[] args) {
+Chopsticks fork = new Chopsticks();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+new Thread(new Philosopher(fork)).start();
+}
+}
+class Philosopher implements Runnable { // 既是生产者又是消费者
+private Chopsticks _chopsticks;
+public Philosopher(Chopsticks _chopsticks) {
+this._chopsticks = _chopsticks;
+}
+@Override
+public void run() {
+while (true) {
+thinking();
+// eating 是关键代码 eating之前要锁住筷子 eating之后释放筷子
+{
+_chopsticks.lockChopSticks();
+eating();
+_chopsticks.unlockChopSticks();
+}
+}
+}
+public void eating() {
+System.out.println("Number : " + Thread.currentThread().getName() + " Eating!");
+try {
+Thread.sleep(1000);// 模拟吃饭，占用一段时间资源
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+public void thinking() {
+System.out.println("Number : " + Thread.currentThread().getName() + " Thinking!");
+try {
+Thread.sleep(1000);// 模拟思考
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+}
+class Chopsticks {
+private final Lock lock=new ReentrantLock();
+private Condition condition=lock.newCondition();
+private boolean[] _islock = { false, false, false, false, false };// 一共五个筷子，使用时被锁住，默认都是没有被锁住的
+public  void lockChopSticks() {
+lock.lock();
+String name = Thread.currentThread().getName();
+int i = Integer.parseInt(name.substring(name.length() - 1, name.length()));// i用于数组
+while (_islock[i] || _islock[(i + 1) % 5]) {
+try {
+condition.await();// 如果左右手有一只正被使用，等待
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+}
+_islock[i] = true;
+_islock[(i + 1) % 5] = true;
+lock.unlock();
+}
+public  void unlockChopSticks() {
+lock.lock();
+String name = Thread.currentThread().getName();
+int i = Integer.parseInt(name.substring(name.length() - 1, name.length()));// i用于数组
+_islock[i] = false;
+_islock[(i + 1) % 5] = false;
+condition.signalAll();
+lock.unlock();
+}
+}
+输出：
+Number : Thread-1 Thinking!
+Number : Thread-4 Thinking!
+Number : Thread-2 Thinking!
+Number : Thread-3 Thinking!
+Number : Thread-0 Thinking!
+Number : Thread-2 Eating!
+Number : Thread-4 Eating!
+Number : Thread-4 Thinking!
+Number : Thread-2 Thinking!
+Number : Thread-1 Eating!
+Number : Thread-3 Eating!
+Number : Thread-3 Thinking!
+Number : Thread-2 Eating!
+Number : Thread-1 Thinking!
+Number : Thread-0 Eating!
+小结：同样地，使用lock+标志位数组+await()+signalAll() 实现线程同步和线程通信，也可以完美的解决了哲学家进餐问题。
+哲学家就餐问题之小结：
+每个哲学既是消费者（拿起左右两只筷子），又是生产者（放下左右两只筷子）；
+第一，只要使用synchronized 或者lock ， 将 "拿起左右两只筷子"和“放下左右两只筷子” 封装为原子操作；
+第二，再使用 wait()--notifyAll() 或者  await()--signalAll()  ，实现哲学家之间（生产者消费者之间）的通信， 整个问题就解决了。
+本文介绍Java多线程技术，分为五个部分：
+多线程的两种实现方式——继承Thread类和实现Runnable接口；
+线程同步应用：三人吃苹果；
+线程同步+线程通信应用之一：生产者-消费者问题；
+线程同步+线程通信应用之二：打蜡抛光问题；
+线程同步+线程通信之用之三：哲学家就餐问题。
+可以帮助初学者的Java多线程入门。
+天天大码，天天进步！

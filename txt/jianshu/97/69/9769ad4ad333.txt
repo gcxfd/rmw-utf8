@@ -1,0 +1,540 @@
+【Java并发006】使用层面：Lock锁机制全解析
+如果一个代码块被synchronized修饰了，当一个线程获取了对应的锁，并执行该代码块时，其他线程便只能一直等待，等待获取锁的线程释放锁，但是获取锁的线程释放锁只会有两种情况：
+因此，可以看到，其他线程只能等待直到持有锁的线程执行完释放锁。
+synchronized实现的锁，只能是非公平的强制锁，对于一些线程，可能长久无法抢占到锁，导致处于饥饿状态，对于某些特定的业务场景，必须要使用公平锁，这时，synchronized同步锁无法满足要求。
+当有多个线程读写文件时，读操作和写操作会发生冲突现象，写操作和写操作会发生冲突现象，但是读操作和读操作不会发生冲突现象。
+但是采用synchronized关键字来实现同步的话，就会导致一个问题：即使多个线程都只是进行读操作，当一个线程在进行读操作时，其他线程也只能等待无法进行读操作。
+（1）有限等待：需要有一种机制可以不让等待的线程一直无期限地等待下去（比如只等待一定的时间或者能够响应中断），这个是synchronized无法办到，Lock可以办到，由tryLock(带时间参数)实现；
+（2）可中断：使用synchronized时，等待的线程会一直阻塞，一直等待下去，不能够响应中断，而Lock锁机制可以让等待锁的线程响应中断，由lockInterruptibly()实现；
+（3）有返回值：需要一种机制可以知道线程有没有成功获得到锁，这个是synchronized无法办到，Lock可以办到，由tryLock()方式实现；
+先看Lock接口的类结构示意图，如下：
+对于Lock接口类结构示意图的解释：Lock接口是所有的父接口，ReentrantLock类是Lock接口的实现，有三个组合类，Sync类、FairSync类、NonfairSync类
+关于 Lock接口、ReentrantLock类、ReadWriteLock接口、ReentrantReadWriteLock类 的定义：
+public interface Lock {
+void lock();
+void lockInterruptibly() throws InterruptedException;
+boolean tryLock();
+boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+void unlock();
+Condition newCondition();
+}
+public class ReentrantLock implements Lock, java.io.Serializable {
+public interface ReadWriteLock {
+Lock readLock();
+Lock writeLock();
+}
+ReadWriteLock接口里面只定义了两个方法，一个用来获取读锁，一个用来获取写锁，也就是说，将文件的读写操作分开，分成2个锁来分配给线程，从而使得多个线程可以同时进行读操作。
+public class ReentrantReadWriteLock
+implements ReadWriteLock, java.io.Serializable {
+ReentrantReadWriteLock实现了ReadWriteLock接口，ReentrantReadWriteLock里面提供了很多丰富的方法，不过最主要的有两个方法：readLock()和writeLock()用来获取读锁和写锁。
+关于读写锁注意：如果有一个线程已经占用了读锁，则此时其他线程如果要申请写锁，则申请写锁的线程会一直等待释放读锁。如果有一个线程已经占用了写锁，则此时其他线程如果申请写锁或者读锁，则申请的线程会一直等待释放写锁。
+tip：ReentrantLock类是Lock接口的唯一实现类，ReentrantReadWriteLock类是ReadWriteLock接口的唯一实现类。
+java.util.concurrent.locks包中常用的类和接口，包括四个： Lock接口、ReentrantLock类、ReadWriteLock接口、ReentrantReadWriteLock类
+Lock接口的定义：
+public interface Lock {
+void lock();
+void lockInterruptibly() throws InterruptedException;
+boolean tryLock();
+boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+void unlock();
+Condition newCondition();
+}
+Lock接口中一共有六个方法，lock(),tryLock(),tryLock(long time, TimeUnit unit)和lockInterruptibly()是用来获取锁的，unLock()方法是用来释放锁的，newCondition()方法便于用户在同一锁的情况下可以根据不同的情况执行等待或唤醒的动作。
+lock()方法：如果锁没有被其他线程获取，则该线程获取锁；如果锁已被其他线程获取，则进行等待。
+通常使用Lock来进行同步的话，是以下面这种形式去使用的：
+lock.lock();
+try{
+//处理任务
+}catch(Exception ex){
+}finally{
+lock.unlock();   //释放锁
+}
+问题1：为什么使用lock.lock()放在try块外面？
+回答1：避免未加锁但是解锁的情况。
+解释1：lock.lock()放在try块外面，因为如果在获取锁时发生了异常，异常抛出的同时，会导致锁无故被释放（即如果将lock.lock()写到try块中，lock.unlock()写到finally块，可能出现未加锁成功却释放锁的情况）；
+问题2：为什么临界代码要放在必须在try块中，lock.unlock()必须放在finally块中
+回答2：为了避免死锁。
+解释2：对于Lock锁机制释放锁，正常情况下不会自动释放锁，在发生异常时也不会自动释放锁。
+所以，必须由程序员主动去释放锁，所以临界代码必须放在try块中，lock.unlock()必须放在finally块中，保证只要通过lock.lock()获得锁后，无论正常执行还是发生异常，锁一定会得到释放，最终目的是为了避免死锁。
+tryLock()方法：有返回值，表示用来尝试获取锁，如果获取成功，则返回true，如果获取失败（即锁已被其他线程获取），则返回false，也就说这个方法无论如何都会立即返回，非阻塞锁，在拿不到锁时不会一直在那等待。
+tryLock(long time, TimeUnit unit)方法：与 tryLock() 方法是类似的，只不过区别在于这个方法在拿不到锁时会等待一定的时间，在时间期限之内如果还拿不到锁，就返回false。如果一开始拿到锁或者在等待时间内拿到了锁，则返回true。
+所以，一般情况下通过 tryLock() 和 tryLock(long time, TimeUnit unit) 来获取锁时是这样使用的：
+Lock lock = ...;
+if(lock.tryLock()) {
+try{
+//处理任务
+}catch(Exception ex){
+}finally{
+lock.unlock();   //释放锁
+}
+}else {
+//如果不能获取锁，则直接做其他事情
+}
+Lock lock = ...;
+if(lock.tryLock(60, TimeUnit.SECONDS)) {
+try{
+//处理任务
+}catch(Exception ex){
+}finally{
+lock.unlock();   //释放锁
+}
+}else {
+//如果不能获取锁，则直接做其他事情
+}
+lockInterruptibly()方法：如果线程正在等待获取锁，则这个线程能够响应中断，即中断线程的等待状态。也就是说，当两个线程同时使用lock.lockInterruptibly()方法来获取某个锁时，假若此时线程A获取到了锁，而线程B只有在等待，那么对线程B调用threadB.interrupt()方法能够中断线程B的等待过程，即lockInterruptibly()方法是能够响应中断的加锁。
+在写代码的时候，由于lockInterruptibly()的声明中抛出了异常，所以lock.lockInterruptibly()必须放在try块中或者在调用lockInterruptibly()的方法外声明抛出InterruptedException。
+第一种，lock.lockInterruptibly()必须放在try块，记得带上catch块
+public void method() {
+try {
+lock.lockInterruptibly();
+//.....
+}catch(Exception e){
+e.printStackTrace();
+}
+finally {
+lock.unlock();
+}
+}
+第二种，在调用lockInterruptibly()的方法外声明抛出InterruptedException
+public void method() throws InterruptedException {
+lock.lockInterruptibly();
+try {
+//.....
+}
+finally {
+lock.unlock();
+}
+}
+tips：当一个线程成功获取到了锁之后，是不会被interrupt()方法中断的。因为调用interrupt()方法不能中断正在运行过程中的线程，只能中断阻塞过程中的线程。所以，当通过lock.lockInterruptibly()方法获取某个锁时，如果不能获取到，只有进行等待的情况下，才可以响应中断。而用synchronized修饰的话，当一个线程处于等待某个锁的状态，是无法被中断的，只有一直等待下去。
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+Lock lock = new ReentrantLock();    //注意这个地方
+lock.lock();
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+}
+}
+想一下这段代码的输出结果是什么？
+Thread-0得到了锁
+Thread-1得到了锁
+Thread-0释放了锁
+Thread-1释放了锁
+问题：为什么会输出这个结果？第二个线程怎么会在第一个线程释放锁之前得到了锁？
+回答：原因在于，insert方法中的lock变量是局部变量，每个线程执行该方法时都会保存一个副本，那么理所当然每个线程执行到lock.lock()处获取的是不同的锁，所以就不会发生冲突。
+知道了原因改起来就比较容易了，只需将lock从原来的局部变量变为类成员变量即可。
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+private Lock lock = new ReentrantLock();    //注意这个地方
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+lock.lock();
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+}
+}
+这样就是正确使用Lock的方法。
+例子，tryLock()的使用方法（lock作为类成员变量，多个线程争夺一个lock变量，成为了互斥锁）：
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+private Lock lock = new ReentrantLock();    //注意这个地方
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+if(lock.tryLock()) {
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+} else {
+System.out.println(thread.getName()+"获取锁失败");
+}
+}
+}
+输出结果：
+Thread-0得到了锁
+Thread-1获取锁失败
+Thread-0释放了锁
+例子，lockInterruptibly()响应中断的使用方法（lock作为类成员变量，多个线程争夺一个lock变量，成为了互斥锁）：
+public class Test {
+private Lock lock = new ReentrantLock();
+public static void main(String[] args)  {
+Test test = new Test();
+MyThread thread1 = new MyThread(test);
+MyThread thread2 = new MyThread(test);
+thread1.start();
+thread2.start();
+try {
+Thread.sleep(2000);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+thread2.interrupt();
+}
+public void insert(Thread thread) throws InterruptedException{
+lock.lockInterruptibly();   //注意，如果需要正确中断等待锁的线程，必须将获取锁放在外面，然后将InterruptedException抛出
+try {
+System.out.println(thread.getName()+"得到了锁");
+long startTime = System.currentTimeMillis();
+for( ；  ；) {
+if(System.currentTimeMillis() - startTime >= Integer.MAX_VALUE)
+break;
+//插入数据
+}
+}
+finally {
+System.out.println(Thread.currentThread().getName()+"执行finally");
+lock.unlock();
+System.out.println(thread.getName()+"释放了锁");
+}
+}
+}
+class MyThread extends Thread {
+private Test test = null;
+public MyThread(Test test) {
+this.test = test;
+}
+@Override
+public void run() {
+try {
+test.insert(Thread.currentThread());
+} catch (InterruptedException e) {
+System.out.println(Thread.currentThread().getName()+"被中断");
+}
+}
+}
+运行之后，发现thread2能够被正确中断。
+ReentrantLock是Lock的实现类，是一个互斥的同步器，在多线程高竞争条件下，ReentrantLock比synchronized有更加优异的性能表现。
+Lock只适用于代码块锁，而synchronized可用于修饰方法、代码块
+：通过Lock可以知道有没有成功获取锁，而synchronized却无法办到。
+（1）synchronized中的锁是非公平锁，ReentrantLock默认情况下也是非公平锁，但可以通过构造方法ReentrantLock(true)来要求使用公平锁（底层由Condition的等待队列实现）。
+（2）ReentrantLock具备尝试非阻塞地获取锁的特性：当前线程尝试获取锁，如果这一时刻锁没有被其他线程获取到，则成功获取并持有锁。
+ReentrantLock对象可以同时绑定多个Condition对象（条件变量或条件队列），而在synchronized中，锁对象的wait()和notify()或notifyAll()方法可以实现一个隐含条件，但如果要和多于一个的条件关联的时候，就不得不额外地添加一个锁，而ReentrantLock则无需这么做，只需要多次调用newCondition()方法即可。而且我们还可以通过绑定Condition对象来判断当前线程通知的是哪些线程（即与Condition对象绑定在一起的其它线程）。
+由ReadWriteLock接口提供方法，ReentrantReadWriteLock提供实现：Lock可以提高多个线程进行读操作的效率。Lock机制加上了读操作并发，当同步锁竞争资源不激烈的时候，synchronized和Lock锁的性能是差不多的，当竞争资源非常激烈时（即有大量线程同时竞争），Lock的性能要远远优于synchronized。所以说，在具体使用时要根据适当情况选择。
+在前面介绍了Lock的基本使用，这一节来介绍一下与锁相关的几个概念。
+可重入性定义：即锁的分配机制是基于线程的分配，而不是基于方法调用的分配。
+可重入锁定义：如果锁具备可重入性，则称为可重入锁。
+在Java中，synchronized和Lock都是可重入锁。
+举例：如果一个线程执行到一个synchronized方法method1，而在method1中又调用了另外一个synchronized方法method2，此时线程不必重新去申请锁，而是可以直接执行方法method2。即锁的锁的分配机制是基于线程的分配，而不是基于方法调用的分配，同一个线程对于同一个同步锁对象（这里是this），再未释放前加锁，即加锁一次（解释：不论是多少个同步代码或同步方法，只要是同一个同步锁对象，这个线程就只要加锁一次，基于线程分配而不是基于方法调用分配）。
+可重入锁代码示意：
+class MyClass {
+public synchronized void method1() {
+method2();
+}
+public synchronized void method2() {
+}
+}
+上述代码中的两个方法method1和method2都用synchronized修饰了，假如某一时刻，线程A执行到了method1，此时线程A获取了这个对象的锁，而由于method2也是synchronized方法。假如synchronized不具备可重入性，此时线程A需要重新申请锁。但是这就会造成要给问题，因为线程A已经持有了该对象的锁，而又在申请获取该对象的锁，这样就会线程A一直等待，永远不会获取到的锁。而由于synchronized和Lock都具备可重入性，所以不会发生上述现象。
+可中断锁定义：顾名思义，就是可以相应中断的锁。
+在Java中，synchronized就不是可中断锁，而Lock是可中断锁。
+如果某一线程A正在执行锁中的代码，另一线程B正在等待获取该锁，可能由于等待时间过长，线程B不想等待了，想先处理其他事情，我们可以让它中断自己或者在别的线程中中断它，这种就是可中断锁。在前面演示lockInterruptibly()的用法时已经体现了Lock的可中断性。
+非公平锁定义：不保存请求锁的顺序，即无法保证锁的获取是按照请求锁的顺序进行的，可能会导致某个或者一些线程永远获取不到锁。
+公平锁定义：排成队列，保存请求锁的顺序，以请求锁的顺序来获取锁。即同时有多个线程在等待一个同步锁，当这个锁被释放时，等待时间最久的线程（最先请求的线程）会获得该锁。
+在Java中，synchronized是只能是非公平锁，而Lock机制（ReentrantLock和ReentrantReadWriteLock）默认情况下是非公平锁，但是可以设置为公平锁。
+在ReentrantLock中定义了2个静态内部类，一个是NotFairSync，一个是FairSync，分别用来实现非公平锁和公平锁。
+我们可以在创建ReentrantLock对象时，通过以下方式来设置锁的公平性：
+ReentrantLock lock = new ReentrantLock(true);
+如果参数为true表示为公平锁，为false则表示非公平锁。默认情况下，如果使用无参构造器，则是非公平锁。
+public ReentrantLock() {
+sync = new NonfairSync();
+}
+public ReentrantLock(boolean fair) {
+sync = fair ? new FairSync() : new NonfairSync();
+}
+另外在ReentrantLock类中定义了很多方法，比如：
+isFair() :判断锁是否是公平锁；
+isLocked():判断锁是否被任何线程获取了；
+isHeldByCurrentThread():判断锁是否被当前线程获取了；
+hasQueuedThreads():判断是否有线程在等待该锁；
+在ReentrantReadWriteLock中也有类似的方法，同样也可以设置为公平锁和非公平锁。不过要记住，ReentrantReadWriteLock并未实现Lock，它实现的是ReadWriteLock接口，这个两个接口没有父子继承关系。
+读写锁将对一个资源（比如文件）的访问分成2个锁，一个读锁和一个写锁。正因为有了读写锁，才使得多个线程之间的读操作不会发生冲突。ReadWriteLock就是读写锁，它是一个接口，ReentrantReadWriteLock实现了这个接口。可以通过readLock()获取读锁，通过writeLock()获取写锁。上面的已经演示了读写锁的使用方法，在此不再赘述。
+当使用synchronized关键字来实现线程同步，那么配合Object类的wait()、notify()/notifyAll()系列方法就可以实现等待/通知模式，即 synchronized+标志位+wait()+notify()/notifyAll()。
+当使用Lock锁机制来实现线程同步，那么配置Codition接口的await()、signal()/signalAll()系列方法就可以实现等待/通知模式，即lock+标志位+condition.await()+condition.signal()/condition.signalAll()
+即提供两种“线程同步+线程通信”的方式
+synchronized+标志位+wait()+notify()/notifyAll()
+lock+标志位+condition.await()+condition.signal()/condition.signalAll()
+但是这两者在使用方式以及功能特性上还是有差别的，如下表：
+Object类定义：
+package java.lang;
+public class Object {
+private static native void registerNatives();
+static {
+registerNatives();
+}
+public final native Class<?> getClass();
+public native int hashCode();
+public boolean equals(Object obj) {
+return (this == obj);
+}
+protected native Object clone() throws CloneNotSupportedException;
+public String toString() {
+return getClass().getName() + "@" + Integer.toHexString(hashCode());
+}
+public final native void notify();
+public final native void notifyAll();
+public final native void wait(long timeout) throws InterruptedException;
+public final void wait(long timeout, int nanos) throws InterruptedException {
+if (timeout < 0) {
+throw new IllegalArgumentException("timeout value is negative");
+}
+if (nanos < 0 || nanos > 999999) {
+throw new IllegalArgumentException(
+"nanosecond timeout value out of range");
+}
+if (nanos > 0) {
+timeout++;
+}
+wait(timeout);
+}
+public final void wait() throws InterruptedException {
+wait(0);
+}
+protected void finalize() throws Throwable { }
+}
+在Object类中，final修饰的方法（不能被重写，只能调用）：
+wait()/wait(long timeout, int nanos)/wait(long timeout)/notify()/notifyAll()   getClass()
+非final修饰的方法，可以被重写方法：
+clone()  hashCode()  equals(Object obj)
+所以，线程通信中的wait()/notify()/notifyAll()，都是final方法，无法被重写，只能被调用。
+Condition可以通俗的理解为等待队列。当一个线程在调用了await方法以后，直到线程等待的某个条件为真的时候才会被唤醒。这种方式为线程提供了更加简单的等待/通知模式。Condition必须要配合锁一起使用，因为对共享状态变量的访问发生在多线程环境下。一个Condition的实例必须与一个Lock绑定，因此Condition一般都是作为Lock的内部类实现。
+一个Condition的实例必须与一个Lock绑定，但是一个Lock可以绑定多个Condition实例。
+Condition接口定义如下：
+public interface Condition {
+void await() throws InterruptedException;
+void awaitUninterruptibly();
+long awaitNanos(long nanosTimeout) throws InterruptedException;
+boolean await(long time, TimeUnit unit) throws InterruptedException;
+boolean awaitUntil(Date deadline) throws InterruptedException;
+void signal();
+void signalAll();
+}
+await() ：造成当前线程在接到信号或被中断之前一直处于等待状态。
+await(long time, TimeUnit unit) ：造成当前线程在接到信号、被中断或到达指定等待时间之前一直处于等待状态。
+awaitNanos(long nanosTimeout) ：造成当前线程在接到信号、被中断或到达指定等待时间之前一直处于等待状态。返回值表示剩余时间，如果在nanosTimesout之前唤醒，那么返回值 = nanosTimeout - 消耗时间，如果返回值 <= 0 ,则可以认定它已经超时了。
+awaitUninterruptibly() ：造成当前线程在接到信号之前一直处于等待状态。【注意：该方法对中断不敏感】。
+awaitUntil(Date deadline) ：造成当前线程在接到信号、被中断或到达指定最后期限之前一直处于等待状态。如果没有到指定时间就被通知，则返回true，否则表示到了指定时间，返回返回false。
+signal() ：唤醒一个等待线程。该线程从等待方法返回前必须获得与Condition相关的锁。
+signalAll()：唤醒所有等待线程。能够从等待方法返回的线程必须获得与Condition相关的锁。
+tips：Condition接口的唯一实现类是CoditionObject类，但是没有什么用，因为我们是直接 Condition condition =lock.newCondition();
+condition.await();   condition.signal();  condition.signalAll();
+首先我们需要明白condition对象是依赖于lock对象的，即 condition对象需要通过lock对象进行创建出来(调用Lock对象的newCondition()方法)。condition 的使用方式非常的简单，但是需要注意在调用方法前获取锁。
+public class ConditionUseCase {
+public Lock lock = new ReentrantLock();
+public Condition condition = lock.newCondition();
+public static void main(String[] args)  {
+ConditionUseCase useCase = new ConditionUseCase();
+ExecutorService executorService = Executors.newFixedThreadPool (2);
+executorService.execute(new Runnable() {
+@Override
+public void run() {
+useCase.conditionWait();
+}
+});
+executorService.execute(new Runnable() {
+@Override
+public void run() {
+useCase.conditionSignal();
+}
+});
+}
+public void conditionWait()  {
+lock.lock();
+try {
+System.out.println(Thread.currentThread().getName() + "拿到锁了");
+System.out.println(Thread.currentThread().getName() + "等待信号");
+condition.await();
+System.out.println(Thread.currentThread().getName() + "拿到信号");
+}catch (Exception e){
+}finally {
+lock.unlock();
+}
+}
+public void conditionSignal() {
+lock.lock();
+try {
+Thread.sleep(5000);
+System.out.println(Thread.currentThread().getName() + "拿到锁了");
+condition.signal();
+System.out.println(Thread.currentThread().getName() + "发出信号");
+}catch (Exception e){
+}finally {
+lock.unlock();
+}
+}
+}
+运行结果：
+pool-1-thread-1拿到锁了
+pool-1-thread-1等待信号
+pool-1-thread-2拿到锁了
+pool-1-thread-2发出信号
+pool-1-thread-1拿到信号
+在程序员的编写代码的时候，一般都会将Condition对象作为类成员变量，当调用await()方法后，当前线程会释放锁进入等待队列，当其他线程调用Condition对象的signal()方法，通知当前线程后，当前线程从等待队列中出来，即从await()方法返回，并且在返回前已经获取了锁。
+Condition是AQS的内部类，每个Condition对象都包含一个队列(等待队列)。等待队列是一个有非循环单链表实现的FIFO的队列，在队列中的每个节点都包含了一个线程引用，该线程就是在Condition对象上等待的线程。使用过程中，如果一个线程调用了Condition.await()方法，那么该线程将会释放锁、构造成节点加入等待队列并进入等待状态，等待队列的基本结构如下所示：
+一个Condition对象维护着一个等待队列，等待队列中每一个节点维护一个线程引用（注意节点中存放的不是线程本身），线程引用指向调用了这个Condition对象的condition.await()的线程本身。
+等待队列分为首节点和尾节点：当一个线程调用condition.await()方法，将会以当前线程构造节点，并将节点从尾部加入等待队列。新增节点就是将尾部节点指向新增的节点。注意，由于节点引用更新本来就是在获取锁以后的操作，所以不需要CAS保证，就是线程安全的操作（解释：代码中，condition.await()发生在lock.lock()和lock.unlock()中间，所以是线程安全的）。
+当线程调用了await方法，线程就作为队列中的一个节点被加入到等待队列中去了，同时会释放锁的拥有。
+当前线程加入到等待队列中如图所示：
+当从await方法返回的时候，一定会获取Condition相关联的锁。当等待队列中的节点被唤醒的时候，则唤醒节点的线程开始尝试获取同步状态。如果不是通过 其他线程调用Condition.signal()方法唤醒，而是对等待线程进行中断，则会抛出InterruptedException异常信息。
+调用Condition的signal()方法，将会唤醒在等待队列中等待最长时间的节点（条件队列里的首节点），在唤醒节点前，会将节点移到同步队列中。
+在调用signal()方法之前必须先判断是否获取到了锁，接着获取等待队列的首节点，将其移动到同步队列并且利用LockSupport唤醒节点中的线程。节点从等待队列移动到同步队列如下图所示：
+金手指：
+（1）获取等待队列的首节点；
+（2）将其移动到同步队列；
+（3）利用LockSupport唤醒节点中的线程。
+被唤醒的线程将从await方法中的while循环中退出，随后加入到同步状态的竞争当中去，成功获取到竞争的线程则会返回到await方法之前的状态。
+import java.util.LinkedList;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class BoundedQueue {
+private LinkedList<Object> buffer;    //生产者容器
+private int maxSize ;           //容器最大值是多少
+private Lock lock;
+private Condition fullCondition;
+private Condition notFullCondition;
+BoundedQueue(int maxSize){
+this.maxSize = maxSize;
+buffer = new LinkedList<Object>();
+lock = new ReentrantLock();
+fullCondition = lock.newCondition();
+notFullCondition = lock.newCondition();
+}
+/**
+* 生产者
+* @param obj
+* @throws InterruptedException
+*/
+public void put(Object obj) throws InterruptedException {
+lock.lock();    //获取锁
+try {
+while (maxSize == buffer.size()){
+notFullCondition.await();       //满了，添加的线程进入等待状态
+}
+buffer.add(obj);
+fullCondition.signal(); //通知
+} finally {
+lock.unlock();
+}
+}
+/**
+* 消费者
+* @return
+* @throws InterruptedException
+*/
+public Object get() throws InterruptedException {
+Object obj;
+lock.lock();
+try {
+while (buffer.size() == 0){ //队列中没有数据了 线程进入等待状态
+fullCondition.await();
+}
+obj = buffer.poll();
+notFullCondition.signal(); //通知
+} finally {
+lock.unlock();
+}
+return obj;
+}
+}
+满了和没满都是维护一个condition对象，维护一个等待队列
+fullCondition = lock.newCondition();
+notFullCondition = lock.newCondition();
+fullCondition 和 notFullCondition  都是使用lock新建出来的的，都是绑定在同一个lock对象上。
+：ReentrantReadWriteLock类并没有实现Lock接口，它只是实现了ReadWriteLock接口，这个接口与Lock接口没有关系，唯一的关系是两个接口都在package java.util.concurrent.locks;中。
+。
+ReentrantLock是Lock的实现类，是一个互斥的同步器，在多线程高竞争条件下，ReentrantLock比synchronized有更加优异的性能表现。
+Lock只适用于代码块锁，而synchronized可用于修饰方法、代码块
+：通过Lock可以知道有没有成功获取锁，而synchronized却无法办到。
+（1）synchronized中的锁是非公平锁，ReentrantLock默认情况下也是非公平锁，但可以通过构造方法ReentrantLock(true)来要求使用公平锁（底层由Condition的等待队列实现）。
+（2）ReentrantLock具备尝试非阻塞地获取锁的特性：当前线程尝试获取锁，如果这一时刻锁没有被其他线程获取到，则成功获取并持有锁。
+ReentrantLock对象可以同时绑定多个Condition对象（条件变量或条件队列），而在synchronized中，锁对象的wait()和notify()或notifyAll()方法可以实现一个隐含条件，但如果要和多于一个的条件关联的时候，就不得不额外地添加一个锁，而ReentrantLock则无需这么做，只需要多次调用newCondition()方法即可。而且我们还可以通过绑定Condition对象来判断当前线程通知的是哪些线程（即与Condition对象绑定在一起的其它线程）。
+由ReadWriteLock接口提供方法，ReentrantReadWriteLock提供实现：Lock可以提高多个线程进行读操作的效率。Lock机制加上了读操作并发，当同步锁竞争资源不激烈的时候，synchronized和Lock锁的性能是差不多的，当竞争资源非常激烈时（即有大量线程同时竞争），Lock的性能要远远优于synchronized。所以说，在具体使用时要根据适当情况选择。
+Condition是AQS的内部类，每个Condition对象都包含一个队列(等待队列)，等待队列是一个FIFO的队列，在队列中的每个节点都包含了一个线程引用，该线程就是在Condition对象上等待的线程，如果一个线程调用了Condition.await()方法，那么该线程将会释放锁、构造成节点加入等待队列并进入等待状态。等待队列的基本结构如下所示。
+金手指1：等待队列中存放的是线程引用而不是线程实体
+一个condition对象维护一个等待队列，等待队列中每一个节点维护一个线程引用（而不是线程本身），线程引用指向调用了这个condition对象的condition.await()的线程本身。
+金手指2：等待队列是FIFO，但是，实现公平锁的是同步队列AQS队列。
+等待分为首节点和尾节点。当一个线程调用condition.await()方法，将会以当前线程构造节点，并将节点从尾部加入等待队列。新增节点就是将尾部节点指向新增的节点。节点引用更新本来就是在获取锁以后的操作，获取锁之后在更新节点引用，此时就已经线程安全了，所以不需要CAS保证，节点引用更新也是线程安全的操作。
+当线程调用了await方法以后，线程就作为队列中的一个节点被加入到等待队列中去了，同时会释放锁的拥有。
+当前线程加入到等待队列中如图所示：
+等待队列是单链非循环，同步队列是双链非循环，AQS队列就是同步队列。
+当调用condition.await方法返回的时候。一定会获取condition相关联的锁。
+当其他线程调用condition.signal()，等待队列中的节点被唤醒的时候，则唤醒节点的线程开始尝试获取同步状态。如果不是通过其他线程调用Condition.signal()方法唤醒，而是对等待线程进行中断，则会抛出InterruptedException异常信息。
+调用Condition的signal()方法，将会唤醒在等待队列中等待最长时间的节点（条件队列里的首节点），在唤醒节点前，会将节点移到同步队列中。
+在调用signal()方法之前必须先判断是否获取到了锁。接着获取等待队列的首节点，将其移动到同步队列并且利用LockSupport唤醒节点中的线程。节点从等待队列移动到同步队列如下图所示：
+步骤：
+（1）获取等待队列的首节点；
+（2）将其移动到同步队列；
+（3）利用LockSupport唤醒节点中的线程。
+被唤醒的线程将从await方法中的while循环中退出。随后加入到同步状态的竞争当中去。成功获取到竞争的线程则会返回到await方法之前的状态。
+同步队列中的节点是可以参与竞争的，等待队列中的节点是不能参与竞争的。
+同步队列中的节点是公平锁，是FIFO，等待队列中的节点也是是FIFO。
+处在同步队列中使用到的属性（加锁、解锁）包括：next prev thread waitStatus
+处在等待队列中使用到的属性（阻塞、唤醒）包括：nextWaiter thread waitStatus
+所以，同步队列和等待队列中存放的都是 thread id
+lock.lock()   线程进入同步队列              在同步队列中
+condition.await()   线程从同步队列队首到等待队列    在等待队列中
+condition.signal()  线程从等待队列队首到同步队列队尾   在同步队列中
+lock.unlock()   线程出同步队列
+Lock锁机制全解析，完成了。
+天天打码，天天进步！！！

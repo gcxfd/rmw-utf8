@@ -1,0 +1,420 @@
+让我们来一起聊聊Java中的锁
+----------------------------------------业精于勤荒于嬉，形成思毁于随-------------------------------
+在Java程序中有时候我们可能需要推迟一些高开销的对象初始化操作，等到使用到这些对象时再去初始化。但要正确实现线程安全的延时初始化需要一些技巧，否则可能会出现问题。比如下面使用双重校验锁实现的演示加载的单例模式就是存在线程安全问题的：
+/**
+* 使用双重校验锁
+*/
+class Single4 {
+private static Single4 single = null;
+private Single4() {
+}
+public static Single4 getSingleton() {
+if (single == null) {
+synchronized (Single4.class) {
+if (single == null) {
+single = new Single4();//问题就出现在这里
+}
+}
+}
+return single;
+}
+}
+问题的根源：
+其实创建一个对象可以分为3步完成的：
+1. memory = allocate();//1.为对象分配内存空间
+2. ctorInstance(single);//2.初始化对象
+3. single = memory;//3.设置single指向刚分配的内存地址
+上面伪代码中的2和3之间可能会被，重排序后执行的顺序是这样的：
+1. memory = allocate();//1.为对象分配内存空间
+2. single = memory;//3.设置single指向刚分配的内存地址
+//这时候对象还没有初始化！
+3. ctorInstance(single);//2.初始化对象
+由上表也可以看出，当线程A中初始化single发生了重排序，并且执行完t2后时间片用完，线程B获得时间片，获取single时候，判断single不为null，接下来线程B将访问single引用的对象，但此时对象还没有进行初始化，所以就会引发异常！
+聪明的你，一定想到了：如果不让创建对象过程发生重排序，不就解决问题啦。是的其实只要对上面的代码做一个小小的修改就能做到：
+/**
+* 使用双重校验锁
+*/
+class Single4 {
+private volatile static Single4 single = null;
+private Single4() {
+}
+public static Single4 getSingleton() {
+if (single == null) {
+synchronized (Single4.class) {
+if (single == null) {
+single = new Single4();
+}
+}
+}
+return single;
+}
+好像没有什么改变啊，有的只是你没注意到：
+对，就是在声明引用的时候在前面加上是怎么做到的。
+volatile是轻量级的synchronized，它在多处理器开发保证了共享变量的“可见性”。可见性的意思是当一个线程修改了共享变量时，另一个线程能读到这个修改的值。
+Java语言规范第三版中对volatile的定义如下：Java编程语言允许线程访问共享变量，为了确保共享变量能被准确和一致地更新，线程应该确保通过排他锁单独获得这个变量。
+意思就是说，如果一个变量被声明为volatile，Java内存模型会确保所有线程所有的线程看到这个变量的值是一致的。
+volatile是如何保证可见性的呢？下面我们看看我们在对volatile变量进行写操作时，cpu会做什么？
+转化成汇编代码如下：
+其中Lock前缀的指令在多核处理器下会引发了两件事：
+其实理解volatile特性的一个好方法：
+锁的happens-before规则保证释放锁和获取锁的两个线程之间的内存可见性，这意味这对一个volatile变量的读，总是能看到任意线程对这个volatile变量最后的写入值。
+volatile变量自身有两个特性：
+：对于一个volatile变量的读，总是能看到任意线程对这个volatile变量最后的写入。
+当写一个volatile变量时，JMM会把线程对应的本地内存中的共享变量值刷新到主内存
+当读一个volatile变量时，JMM会把线程对应的本地内存置为无效，线程接下来将从主内存中读取共享变量。
+一些编程大牛往往会告诫我们说，尽量不要去使用volatile，因为使用volatile稍有不慎就会出现问题。如果严格遵循 volatile 的使用条件：
+如果是多个volatile操作或类似于volatile++这种复合操作，这些操作整体上不具有原子性。在某些情况下可以使用volatile代替synchronized来简化代码。然而，使用volatile的代码往往比使用锁的代码更加容易出错。（见volatileDemo）
+在多线程并发编程中synchronized一直是元老级角色，也有很多人称它为重量级锁。但是随着Java 1.6对aynchronized进行了各种优化之后，有些情况下他就并不那么重了。
+JVM规范规定JVM基于进入和退出Monitor对象来实现方法同步和代码块同步，但两者的实现细节不一样。代码块同步是使用monitorenter和monitorexit指令实现，而方法同步是使用另外一种方式实现的，细节在JVM规范里并没有详细说明，但是方法的同步同样可以使用这两个指令来实现。monitorenter指令是在编译后插入到同步代码块的开始位置，而monitorexit是插入到方法结束处和异常处， JVM要保证每个monitorenter必须有对应的monitorexit与之配对。任何对象都有一个 monitor 与之关联，当且一个monitor 被持有后，它将处于锁定状态。线程执行到 monitorenter 指令时，将会尝试获取对象所对应的 monitor 的所有权，即尝试获得对象的锁。
+锁存在Java对象头里。如果对象是数组类型，则虚拟机用3个Word（字宽）存储对象头，如果对象是非数组类型，则用2字宽存储对象头。在32位虚拟机中，一字宽等于四字节，即32bit。
+Java对象头里的Mark Word里默认存储对象的HashCode，分代年龄和锁标记位。32位JVM的Mark Word的默认存储结构如下：
+在运行期间Mark Word里存储的数据会随着锁标志位的变化而变化。Mark Word可能变化为存储以下4种数据：
+线程的阻塞和唤醒需要CPU从用户态转为核心态，频繁的阻塞和唤醒对CPU来说是一件负担很重的工作。
+Java SE1.6为了减少获得锁和释放锁所带来的性能消耗，引入了“偏向锁”和“轻量级锁”，所以在Java SE1.6里锁一共有四种状态，无锁状态，偏向锁状态，轻量级锁状态和重量级锁状态，它会随着竞争情况逐渐升级。
+锁可以升级但不能降级，意味着偏向锁升级成轻量级锁后不能降级成偏向锁。这种锁升级却不能降级的策略，目的是为了提高获得锁和释放锁的效率。
+Hotspot的作者经过以往的研究发现大多数情况下锁不仅不存在多线程竞争，而且总是由同一线程多次获得。偏向锁的目的是在某个线程获得锁之后，消除这个线程锁重入（CAS）的开销，看起来让这个线程得到了偏护。
+偏向锁的释放不需要做任何事情，这也就意味着加过偏向锁的MarkValue会一直保留偏向锁的状态，因此即便同一个线程持续不断地加锁解锁，也是没有开销的。
+另一方面，偏向锁比轻量锁更容易被终结，轻量锁是在有锁竞争出现时升级为重量锁，而一般偏向锁是在有不同线程申请锁时升级为轻量锁，这也就意味着假如一个对象先被线程1加锁解锁，再被线程2加锁解锁，这过程中没有锁冲突，也一样会发生偏向锁失效，不同的是这回要先退化为无锁的状态，再加轻量锁，如图：
+另外，JVM对那种会有多线程加锁，但不存在锁竞争的情况也做了优化，听起来比较拗口，但在现实应用中确实是可能出现这种情况，因为线程之前除了互斥之外也可能发生同步关系，被同步的两个线程（一前一后）对共享对象锁的竞争很可能是没有冲突的。
+当一个线程访问同步块并获取锁时，会在对象头和栈帧中的锁记录里存储锁偏向的线程ID，以后该线程在进入和退出同步块时不需要花费CAS操作来加锁和解锁，而只需简单的测试一下对象头的Mark Word里是否存储着指向当前线程的偏向锁，如果测试成功，表示线程已经获得了锁，如果测试失败，则需要再测试下Mark Word中偏向锁的标识是否设置成1（表示当前是偏向锁），如果没有设置，则使用CAS竞争锁，如果设置了，则尝试使用CAS将对象头的偏向锁指向当前线程。
+偏向锁使用了一种等到竞争出现才释放锁的机制，所以当其他线程尝试竞争偏向锁时，持有偏向锁的线程才会释放锁。偏向锁的撤销，需要等待全局安全点（在这个时间点上没有字节码正在执行），它会首先暂停拥有偏向锁的线程，然后检查持有偏向锁的线程是否活着，如果线程不处于活动状态，则将对象头设置成无锁状态，如果线程仍然活着，拥有偏向锁的栈会被执行，遍历偏向对象的锁记录，栈中的锁记录和对象头的Mark Word要么重新偏向于其他线程，要么恢复到无锁或者标记对象不适合作为偏向锁，最后唤醒暂停的线程。下图中的线程1演示了偏向锁初始化的流程，线程2演示了偏向锁撤销的流程。
+关闭偏向锁：偏向锁在Java 6和Java 7里是默认启用的，但是它在应用程序启动几秒钟之后才激活，如有必要可以使用JVM参数来关闭延迟-XX：BiasedLockingStartupDelay = 0。如果你确定自己应用程序里所有的锁通常情况下处于竞争状态，可以通过JVM参数关闭偏向锁-XX:-UseBiasedLocking=false，那么默认会进入轻量级锁状态。
+线程在执行同步块之前，JVM会先在当前线程的栈桢中创建用于存储锁记录的空间，并将对象头中的Mark Word复制到锁记录中，官方称为Displaced Mark Word。然后线程尝试使用CAS将对象头中的Mark Word替换为指向锁记录的指针。如果成功，当前线程获得锁，如果失败，则自旋获取锁，当自旋获取锁仍然失败时，表示存在其他线程竞争锁(两条或两条以上的线程竞争同一个锁)，则轻量级锁会膨胀成重量级锁。
+轻量级解锁时，会使用原子的CAS操作来将Displaced Mark Word替换回到对象头，如果成功，则表示同步过程已完成。如果失败，表示有其他线程尝试过获取该锁，则要在释放锁的同时唤醒被挂起的线程。下图是两个线程同时争夺锁，导致锁膨胀的流程图。
+重量锁在JVM中又叫对象监视器（Monitor），它很像C中的Mutex，除了具备Mutex互斥的功能，它还负责实现了Semaphore的功能，也就是说它至少包含一个竞争锁的队列，和一个信号阻塞队列（wait队列），前者负责做互斥，后一个用于做线程同步。
+锁是java并发编程中最重要的同步机制。锁除了让临界区互斥执行外，还可以让释放锁的线程向获取同一个锁的线程发送消息。下面是锁释放-获取的示例代码：
+class MonitorExample {
+int a = 0;
+public synchronized void writer() {  //1
+a++;                             //2
+}                                    //3
+public synchronized void reader() {  //4
+int i = a;                       //5
+……
+}                                    //6
+}
+假设线程A执行writer()方法，随后线程B执行reader()方法。根据happens before规则，这个过程包含的happens before 关系可以分为两类：
+根据happens before 的传递性，2 happens before 5。
+上述happens before 关系的图形化表现形式如下：
+在上图中，每一个箭头链接的两个节点，代表了一个happens before 关系。黑色箭头表示程序顺序规则；橙色箭头表示监视器锁规则；蓝色箭头表示组合这些规则后提供的happens before保证。
+上图表示在线程A释放了锁之后，随后线程B获取同一个锁。在上图中，2 happens before 5。因此，线程A在释放锁之前所有可见的共享变量，在线程B获取同一个锁之后，将立刻变得对B线程可见。
+当线程释放锁时，JMM会把该线程对应的本地内存中的共享变量刷新到主内存中。以上面的MonitorExample程序为例，A线程释放锁后，共享数据的状态示意图如下：
+当线程获取锁时，JMM会把该线程对应的本地内存置为无效。从而使得被监视器保护的临界区代码必须要从主内存中去读取共享变量。下面是锁获取的状态示意图：
+对比锁释放-获取的内存语义与volatile写-读的内存语义，可以看出：锁释放与volatile写有相同的内存语义；锁获取与volatile读有相同的内存语义。
+下面对锁释放和锁获取的内存语义做个总结：
+下面我们就来探讨一下java.util.concurrent.locks包中常用的类和接口。
+首先要说明的就是Lock，通过查看Lock的源码可知，Lock是一个接口：
+public interface Lock {
+void lock();
+void lockInterruptibly() throws InterruptedException;
+boolean tryLock();
+boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+void unlock();
+Condition newCondition();
+}
+下面来逐个讲述Lock接口中每个方法的使用，lock()、tryLock()、tryLock(long time, TimeUnit unit)和lockInterruptibly()是用来获取锁的。unLock()方法是用来释放锁的。
+在Lock中声明了四个方法来获取锁，那么这四个方法有何区别呢？
+首先lock()方法是平常使用得最多的一个方法，就是用来获取锁。如果锁已被其他线程获取，则进行等待。
+由于在前面讲到如果采用Lock，必须主动去释放锁，并且在发生异常时，不会自动释放锁。因此一般来说，使用Lock必须在try{}catch{}块中进行，并且将释放锁的操作放在finally块中进行，以保证锁一定被被释放，防止死锁的发生。通常使用Lock来进行同步的话，是以下面这种形式去使用的：
+Lock lock = ...;
+lock.lock();
+try{
+//处理任务
+}catch(Exception ex){
+}finally{
+lock.unlock();   //释放锁
+}
+tryLock()方法是有返回值的，它表示用来尝试获取锁，如果获取成功，则返回true，如果获取失败（即锁已被其他线程获取），则返回false，也就说这个方法无论如何都会立即返回。在拿不到锁时不会一直在那等待。
+tryLock(long time,TimeUnitunit)方法和tryLock()方法是类似的，只不过区别在于这个方法在拿不到锁时会等待一定的时间，在时间期限之内如果还拿不到锁，就返回false。如果如果一开始拿到锁或者在等待期间内拿到了锁，则返回true。
+所以，一般情况下通过tryLock来获取锁时是这样使用的：
+Lock lock = ...;
+if(lock.tryLock()) {
+try{
+//处理任务
+}catch(Exception ex){
+}finally{
+lock.unlock();   //释放锁
+}
+}else {
+//如果不能获取锁，则直接做其他事情
+}
+lockInterruptibly()方法比较特殊，当通过这个方法去获取锁时，如果线程正在等待获取锁，则这个线程能够响应中断，即中断线程的等待状态。也就使说，当两个线程同时通过lock.lockInterruptibly()想获取某个锁时，假若此时线程A获取到了锁，而线程B只有在等待，那么对线程B调用threadB.interrupt()方法能够中断线程B的等待过程。
+由于lockInterruptibly()的声明中抛出了异常，所以lock.lockInterruptibly()必须放在try块中或者在调用lockInterruptibly()的方法外声明抛出InterruptedException。
+因此lockInterruptibly()一般的使用形式如下：
+public void method() throws InterruptedException {
+lock.lockInterruptibly();
+try {
+//.....
+}
+finally {
+lock.unlock();
+}
+}
+注意，当一个线程获取了锁之后，是不会被interrupt()方法中断的。因为本身在前面的文章中讲过单独调用interrupt()方法不能中断正在运行过程中的线程，只能中断阻塞过程中的线程。
+因此当通过lockInterruptibly()方法获取某个锁时，如果不能获取到，只有进行等待的情况下，是可以响应中断的。
+而用synchronized修饰的话，当一个线程处于等待某个锁的状态，是无法被中断的，只有一直等待下去。
+ReentrantLock，意思是“可重入锁”，关于可重入锁的概念在下一节讲述。ReentrantLock是唯一实现了Lock接口的类，并且ReentrantLock提供了更多的方法。下面通过一些实例看具体看一下如何使用ReentrantLock。
+例子1，lock()的正确使用方法
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+Lock lock = new ReentrantLock();    //注意这个地方
+lock.lock();
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+}
+}
+小伙伴们先想一下这段代码的输出结果是什么？
+Thread-0得到了锁
+Thread-1得到了锁
+Thread-0释放了锁
+Thread-1释放了锁
+也许有朋友会问，怎么会输出这个结果？第二个线程怎么会在第一个线程释放锁之前得到了锁？原因在于，在insert方法中的lock变量是局部变量，每个线程执行该方法时都会保存一个副本，那么理所当然每个线程执行到lock.lock()处获取的是不同的锁，所以就不会发生冲突。
+知道了原因改起来就比较容易了，只需要将lock声明为类的属性即可。
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+private Lock lock = new ReentrantLock();    //注意这个地方
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+lock.lock();
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+}
+}
+这样就是正确地使用Lock的方法了。
+例子2，tryLock()的使用方法
+public class Test {
+private ArrayList<Integer> arrayList = new ArrayList<Integer>();
+private Lock lock = new ReentrantLock();    //注意这个地方
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.insert(Thread.currentThread());
+};
+}.start();
+}
+public void insert(Thread thread) {
+if(lock.tryLock()) {
+try {
+System.out.println(thread.getName()+"得到了锁");
+for(int i=0;i<5;i++) {
+arrayList.add(i);
+}
+} catch (Exception e) {
+// TODO: handle exception
+}finally {
+System.out.println(thread.getName()+"释放了锁");
+lock.unlock();
+}
+} else {
+System.out.println(thread.getName()+"获取锁失败");
+}
+}
+}
+输出结果：
+Thread-0得到了锁
+Thread-1获取锁失败
+Thread-0释放了锁
+例子3，lockInterruptibly()响应中断的使用方法：
+public class Test {
+private Lock lock = new ReentrantLock();
+public static void main(String[] args)  {
+Test test = new Test();
+MyThread thread1 = new MyThread(test);
+MyThread thread2 = new MyThread(test);
+thread1.start();
+thread2.start();
+try {
+Thread.sleep(2000);
+} catch (InterruptedException e) {
+e.printStackTrace();
+}
+thread2.interrupt();
+}
+public void insert(Thread thread) throws InterruptedException{
+lock.lockInterruptibly();   //注意，如果需要正确中断等待锁的线程，必须将获取锁放在外面，然后将InterruptedException抛出
+try {
+System.out.println(thread.getName()+"得到了锁");
+long startTime = System.currentTimeMillis();
+for(    ;     ;) {
+if(System.currentTimeMillis() - startTime >= Integer.MAX_VALUE)
+break;
+//插入数据
+}
+}
+finally {
+System.out.println(Thread.currentThread().getName()+"执行finally");
+lock.unlock();
+System.out.println(thread.getName()+"释放了锁");
+}
+}
+}
+class MyThread extends Thread {
+private Test test = null;
+public MyThread(Test test) {
+this.test = test;
+}
+@Override
+public void run() {
+try {
+test.insert(Thread.currentThread());
+} catch (InterruptedException e) {
+System.out.println(Thread.currentThread().getName()+"被中断");
+}
+}
+}
+运行之后，发现thread2能够被正确中断。
+ReadWriteLock也是一个接口，在它里面只定义了两个方法：
+public interface ReadWriteLock {
+/**
+* Returns the lock used for reading.
+*
+* @return the lock used for reading.
+*/
+Lock readLock();
+/**
+* Returns the lock used for writing.
+*
+* @return the lock used for writing.
+*/
+Lock writeLock();
+}
+一个用来获取读锁，一个用来获取写锁。也就是说将文件的读写操作分开，分成2个锁来分配给线程，从而使得多个线程可以同时进行读操作。下面的ReentrantReadWriteLock实现了ReadWriteLock接口。
+ReentrantReadWriteLock里面提供了很多丰富的方法，不过最主要的有两个方法：readLock()和writeLock()用来获取读锁和写锁。
+下面通过几个例子来看一下ReentrantReadWriteLock具体用法。
+假如有多个线程要同时进行读操作的话，先看一下synchronized达到的效果：
+public class Test {
+private ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.get(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.get(Thread.currentThread());
+};
+}.start();
+}
+public synchronized void get(Thread thread) {
+long start = System.currentTimeMillis();
+while(System.currentTimeMillis() - start <= 1) {
+System.out.println(thread.getName()+"正在进行读操作");
+}
+System.out.println(thread.getName()+"读操作完毕");
+}
+}
+这段程序的输出结果会是，直到thread1执行完读操作之后，才会打印thread2执行读操作的信息。
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0读操作完毕
+Thread-1正在进行读操作
+Thread-1正在进行读操作
+Thread-1读操作完毕
+而改成用读写锁的话：
+public class Test {
+private ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+public static void main(String[] args)  {
+final Test test = new Test();
+new Thread(){
+public void run() {
+test.get(Thread.currentThread());
+};
+}.start();
+new Thread(){
+public void run() {
+test.get(Thread.currentThread());
+};
+}.start();
+}
+public void get(Thread thread) {
+rwl.readLock().lock();
+try {
+long start = System.currentTimeMillis();
+while(System.currentTimeMillis() - start <= 1) {
+System.out.println(thread.getName()+"正在进行读操作");
+}
+System.out.println(thread.getName()+"读操作完毕");
+} finally {
+rwl.readLock().unlock();
+}
+}
+}
+此时打印的结果为：
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-1正在进行读操作
+Thread-1正在进行读操作
+Thread-1正在进行读操作
+Thread-0正在进行读操作
+Thread-0正在进行读操作
+Thread-0读操作完毕
+Thread-1读操作完毕
+说明thread1和thread2在同时进行读操作。
+不过要注意的是，如果有一个线程已经占用了读锁，则此时其他线程如果要申请写锁，则申请写锁的线程会一直等待释放读锁。
+如果有一个线程已经占用了写锁，则此时其他线程如果申请写锁或者读锁，则申请的线程会一直等待释放写锁。
+关于ReentrantReadWriteLock类中的其他方法感兴趣的朋友可以自行查阅API文档。
+总结来说，Lock和synchronized有以下几点不同：
+1）Lock是一个接口，而synchronized是Java中的关键字，synchronized是内置的语言实现；
+2）synchronized在发生异常时，会自动释放线程占有的锁，因此不会导致死锁现象发生；而Lock在发生异常时，如果没有主动通过unLock()去释放锁，则很可能造成死锁现象，因此使用Lock时需要在finally块中释放锁；
+3）Lock可以让等待锁的线程响应中断，而synchronized却不行，使用synchronized时，等待的线程会一直等待下去，不能够响应中断；
+4）通过Lock可以知道有没有成功获取锁，而synchronized却无法办到。
+5）Lock可以提高多个线程进行读操作的效率。
+在性能上来说，如果竞争资源不激烈，两者的性能是差不多的，而当竞争资源非常激烈时（即有大量线程同时竞争），此时Lock的性能要远远优于synchronized。所以说，在具体使用时要根据适当情况选择。
+参考文献
+《Java并发编程艺术》

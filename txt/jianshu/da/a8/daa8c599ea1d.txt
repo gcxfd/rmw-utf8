@@ -1,0 +1,53 @@
+runtime-添加方法
+如果一个类中方法仅仅是声明,并不会加载到内存,只有实现的方法才会加载到内存中
+开发使用场景：如果一个类方法非常多，加载类到内存的时候也比较耗费资源，需要给每个方法生成映射表，可以使用动态给某个类，添加方法解决。
+经典面试题：有没有使用performSelector，其实主要想问你有没有运用runtime动态添加过方法。
+@implementation ViewController
+- (void)viewDidLoad {
+[super viewDidLoad];
+/*  获取Person类中所有方法
+unsigned int count = 0;
+// 参数一:获取哪个类的方法列表
+// 参数二:方法列表总数
+// 调用完这个方法,count就有值,记录方法列表总数
+// 获取仅仅是当前类
+// 返回指向方法列表数组
+Method *methodList = class_copyMethodList([Person class], &count);
+for (int i = 0; i < count; i++) {
+// 取出对应的方法
+Method method = methodList[i];
+// 获取方法名(方法编号)
+SEL methodSel =  method_getName(method);
+NSLog(@"%@",NSStringFromSelector(methodSel));
+*/
+Person *p = [[Person alloc] init];
+// 默认person，没有实现eat方法，可以通过performSelector调用，但是会报错。
+// performSelector可以调用私有方法
+// 动态添加方法就不会报错
+[p performSelector:@selector(eat)];
+}
+@end
+@implementation Person
+// 默认方法都有两个隐式参数，
+void eat(id self,SEL sel)
+{
+NSLog(@"%@ %@",self,NSStringFromSelector(sel));
+}
+// 当一个对象调用未实现的方法，会调用这个方法处理,并且会把对应的方法列表传过来.
+// 刚好可以用来判断，未实现的方法是不是我们想要动态添加的方法
++ (BOOL)resolveInstanceMethod:(SEL)sel
+{
+if (sel == @selector(eat)) {
+// 动态添加eat方法
+// 第一个参数：给哪个类添加方法
+// 第二个参数：添加方法的方法编号
+// 第三个参数：添加方法的函数实现（函数地址）
+// 第四个参数：函数的类型，(返回值+参数类型) v:void @:对象->self :表示SEL->_cmd
+class_addMethod(self, @selector(eat), eat, "v@:");
+}
+return [super resolveInstanceMethod:sel];
+}
+@end
+1. Method resolution：objc运行时会调用+resolveInstanceMethod:或者 +resolveClassMethod进行第一次添加方法处理
+2. Fast forwarding：目标对象实现了-forwardingTargetForSelector:，Runtime 这时就会调用这个方法，这是第二个节点
+3. Normal forwarding：会发送-methodSignatureForSelector:消息获得函数的参数和返回值类型，这是第三个节点

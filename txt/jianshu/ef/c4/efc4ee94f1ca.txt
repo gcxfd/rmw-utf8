@@ -1,0 +1,356 @@
+原声js模拟微信滑动
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+<title>微信滑动删除</title>
+<!--<link rel="stylesheet" type="text/css" href="base.css"/>-->
+<style>
+*{
+padding: 0;
+margin: 0;
+}
+html {
+font-size: 20px;
+}
+body {
+font-size: 16px;
+}
+@media only screen and (max-width: 320px) {    html {
+font-size: 42.7px !important;
+}}
+@media only screen and (min-width: 321px) and (max-width: 360px) {    html {
+font-size: 48px !important;
+}}
+@media only screen and (min-width: 361px) and (max-width: 375px) {    html {
+font-size: 50px !important;
+}}
+@media only screen and (min-width: 376px) and (max-width: 384px) {    html {
+font-size: 52.1px !important;
+}}
+@media only screen and (min-width: 385px) and (max-width: 414px) {    html {
+font-size: 55.2px !important;
+}}
+@media only screen and (min-width: 415px) and (max-width: 480px) {    html {
+font-size: 64px !important;
+}}
+@media only screen and (min-width: 481px) and (max-width: 540px) {    html {
+font-size: 72px !important;
+}}
+@media only screen and (min-width: 750px) {    html {
+font-size: 100px !important;
+}}
+.line{
+width: 7.5rem;
+height: 1.35rem;
+}
+.line_move{
+width: 7.5rem;
+height: 100%;
+font-size: 0.28rem;
+padding-left: 0.3rem;
+padding-right: 0.3rem;
+border-bottom: 1px solid #E0E0E0;
+background-color: white;
+box-sizing: border-box;
+float: left;
+position: relative;
+z-index: 2;
+}
+.reimbu_top{
+padding-top: 0.2rem;
+}
+.reimbu_top>span:nth-child(2){
+float: right;
+color: #FFAA00;
+}
+.reimbu_bottom{
+margin-top: 0.2rem;
+margin-bottom: 0.2rem;
+}
+.reimbu_bottom>span:nth-child(2){
+float: right;
+}
+.line_right{
+position: relative;
+left: 4.3rem;
+height: 1.32rem;
+width: 3.2rem;
+}
+.line_right div{
+width: 1.6rem;
+height: 1.32rem;
+line-height: 1.32rem;
+text-align: center;
+font-size: 0.26rem;
+box-sizing: border-box;
+}
+.line_right>div:nth-child(1){
+background-color: yellow;
+position: absolute;
+top: 0;
+right: 1.6rem;
+}
+.line_right>div:nth-child(2){
+background-color: #fb4748;
+position: absolute;
+top: 0;
+right: 0;
+}
+</style>
+</head>
+<body>
+<div class="box-1">
+<div class="box_count">
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+<div class="line">
+<div class="line_move" index="1">
+<div class="reimbu_top">
+<span>做个安静的美女子</span>
+<span>10001.00元</span>
+</div>
+<div class="reimbu_bottom">
+<span>2017-08-28</span>
+<span>未打印</span>
+</div>
+</div>
+<div class="line_right">
+<div>编辑</div>
+<div onclick="test(1)">删除</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+var moveArr = document.getElementsByClassName('line_move');
+var startX = 0;
+var moveX = 0;
+var moveStatus = 0;   // 0:未滑出 1：已滑出
+var arr = [];         // 判断手指触摸数量
+function handler() {
+return false;
+}
+for(var i=0; i<moveArr.length; i++) {
+moveArr[i].addEventListener('touchstart', function(event){
+startX = event.touches[0].clientX;
+arr.push(this.getAttribute('index'));    //arr.push(1); 不需要索引值就用这个
+// 添加阻止默认行为
+// this.addEventListener('touchmove', handler, false);
+})
+moveArr[i].addEventListener('touchmove', function(event){
+moveX = event.touches[0].clientX - startX;
+})
+moveArr[i].addEventListener('touchend', function(event){
+moveEnd = moveX*0.01;
+console.log(moveEnd);
+//向左滑动
+if( moveEnd < 0 && moveStatus == 0){    //未滑出
+if( Math.abs(moveEnd) > 1 ){
+this.style.transform = "translate("+-3.2+"rem)";
+moveStatus = 1;
+}else{
+this.style.transform = "translate("+0+"rem)";
+moveStatus = 0;
+}
+}else if(moveEnd < 0 && moveStatus == 1){    //已滑出
+moveArr[this.getAttribute('index')].style.transform = "translate("+0+"rem)";
+moveStatus = 0;
+// 向右滑动
+}else if(moveEnd > 0 && moveEnd > 1){
+this.style.transform = "translate("+0+"rem)";
+moveStatus = 0;
+}
+this.style.transitionDuration ="0.5s";
+moveX = 0;
+// 解绑事件
+this.removeEventListener('touchmove', handler, false);
+})
+}
+for(var i=0; i<moveArr.length; i++) {
+moveArr[i].addEventListener("touchstart", function(e){
+arr = [];
+moveStatus = 0;
+for(var j=0; j<moveArr.length; j++){
+moveArr[j].style.transform = "translate("+0+"rem)";
+}
+});
+}
+</script>
+</body>
+</html>
