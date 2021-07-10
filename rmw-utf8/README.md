@@ -21,6 +21,8 @@ fn main() {
 
 ## 压缩率评测
 
+注意：rmw-utf8 只能压缩utf-8文本，不是通用的二进制压缩算法
+
 ```
 "人民网络"
         orginal text bytes length :  12
