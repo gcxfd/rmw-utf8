@@ -796,6 +796,8 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "sdb"
 version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3acfc6227a1bc841e77d90376b87123252b7e13f7de4747fa34629d24dad77d9"
 dependencies = [
  "desse",
  "sanakirja",
@@ -805,6 +807,8 @@ dependencies = [
 [[package]]
 name = "sdb_macro"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c6f2fd13e06a0d9a20ecc2de9d12adeed800a66e41255da6c724174577a09fb"
 dependencies = [
  "quote 1.0.9",
  "syn 1.0.73",

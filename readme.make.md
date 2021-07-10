@@ -88,7 +88,7 @@ cd train
 
 因为打算从底层重构整个互联网架构，所以，我计划一切都自己从底层搭建。
 
-首先，我封装了sanakirja数据库 —— [sdb](https://docs.rs/crate/sdb) 。
+首先，我封装了sanakirja数据库 —— [sdb](https://docs.rs/crate/sdb) （这个数据库会崩溃问题还有点多，不推荐现在使用）。
 
 根据sanakirja作者所说，[sanakirja比sled要快10倍](https://www.reddit.com/r/rust/comments/lp5jez/sanakirja_10_pure_rust_transactional_ondisk/)。
 
@@ -161,3 +161,5 @@ unicode字符数是固定已知的，unicode-13.0.0方案有143859个字符([参
 编码问题到此为止。
 
 继续写人民网络去。
+
+
